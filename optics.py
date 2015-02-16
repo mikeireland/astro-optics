@@ -1,5 +1,8 @@
 """A selection of useful functions for optics, especially Fourier optics. The
-documentation is designed to be used with pydoc (still lots to do)
+documentation is designed to be used with sphinx (still lots to do)
+
+Exercise for Adam: use np.fft.fft2 and np.fft.fftshift to make a Fraunhofer
+diffraction function.
 """
 
 import numpy as np
@@ -70,7 +73,7 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
     if stddev:
         radial_prof = np.array([image.flat[whichbin==b].std() for b in xrange(1,nbins+1)])
     elif return_max:
-    	radial_prof = np.array([np.append((image*weights).flat[whichbin==b],-np.inf).max() for b in xrange(1,nbins+1)])
+        radial_prof = np.array([np.append((image*weights).flat[whichbin==b],-np.inf).max() for b in xrange(1,nbins+1)])
     else:
         radial_prof = np.array([(image*weights).flat[whichbin==b].sum() / weights.flat[whichbin==b].sum() for b in xrange(1,nbins+1)])
 
@@ -91,109 +94,131 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
         return radial_prof
 
 def kmf(sz):
-	"""This function creates a periodic wavefront produced by Kolmogorov turbulence. 
-	It SHOULD normalised so that the variance at a distance of 1 pixel is 1 radian^2,
-	but this is totally wrong now. The correct normalisation comes from an
-	empirical calculation, scaled like in the IDL code.
-	
-	Parameters
-	----------
-	sz: int
-		Size of the 2D array
-	
-	Returns
-	-------
-	wavefront: float array (sz,sz)
-		2D array wavefront.
-	"""
-	xy = np.meshgrid(np.arange(sz/2 + 1)/float(sz), (((np.arange(sz) + sz/2) % sz)-sz/2)/float(sz))
-	dist2 = np.maximum( xy[1]**2 + xy[0]**2, 1e-12)
-	ft_wf = np.exp(2j * np.pi * np.random.random((sz,sz/2+1)))*dist2**(-11.0/12.0)
-	ft_wf[0,0]=0
-	return np.fft.irfft2(ft_wf)
-	
+    """This function creates a periodic wavefront produced by Kolmogorov turbulence. 
+    It SHOULD normalised so that the variance at a distance of 1 pixel is 1 radian^2,
+    but this is totally wrong now. The correct normalisation comes from an
+    empirical calculation, scaled like in the IDL code.
+    
+    Parameters
+    ----------
+    sz: int
+        Size of the 2D array
+    
+    Returns
+    -------
+    wavefront: float array (sz,sz)
+        2D array wavefront.
+    """
+    xy = np.meshgrid(np.arange(sz/2 + 1)/float(sz), (((np.arange(sz) + sz/2) % sz)-sz/2)/float(sz))
+    dist2 = np.maximum( xy[1]**2 + xy[0]**2, 1e-12)
+    ft_wf = np.exp(2j * np.pi * np.random.random((sz,sz/2+1)))*dist2**(-11.0/12.0)
+    ft_wf[0,0]=0
+    return np.fft.irfft2(ft_wf)
+    
 def moffat(theta, hw, beta=4.0):
-	"""This creates a moffatt function for simulating seeing.
-	The output is an array with the same dimensions as theta.
-	Total Flux" is set to 1 - this only applies if sampling
-	of thetat is 1 per unit area (e.g. arange(100)).
-	
-	From Racine (1996), beta=4 is a good approximation for seeing
-	
-	Parameters
-	----------
-	theta: float or float array
-	    Angle at which to calculate the moffat profile (same units as hw)
-	hw: float
-	    Half-width of the profile
-	beta: float
-	    beta parameters
-	
-	"""
-	denom = (1 + (2**(1.0/beta) - 1)*(theta/hw)**2)**beta
-	return (2.0**(1.0/beta)-1)*(beta-1)/np.pi/hw**2/denom
-	
+    """This creates a moffatt function for simulating seeing.
+    The output is an array with the same dimensions as theta.
+    Total Flux" is set to 1 - this only applies if sampling
+    of thetat is 1 per unit area (e.g. arange(100)).
+    
+    From Racine (1996), beta=4 is a good approximation for seeing
+    
+    Parameters
+    ----------
+    theta: float or float array
+        Angle at which to calculate the moffat profile (same units as hw)
+    hw: float
+        Half-width of the profile
+    beta: float
+        beta parameters
+    
+    """
+    denom = (1 + (2**(1.0/beta) - 1)*(theta/hw)**2)**beta
+    return (2.0**(1.0/beta)-1)*(beta-1)/np.pi/hw**2/denom
+    
 def moffat2d(sz,hw, beta=4.0):
-	"""A 2D version of a moffat function
-	"""
-	x = np.arange(sz) - sz/2.0
-	xy = np.meshgrid(x,x)
-	r = np.sqrt(xy[0]**2 + xy[1]**2)
-	return moffat(r, hw, beta=beta)
-	
-	
+    """A 2D version of a moffat function
+    """
+    x = np.arange(sz) - sz/2.0
+    xy = np.meshgrid(x,x)
+    r = np.sqrt(xy[0]**2 + xy[1]**2)
+    return moffat(r, hw, beta=beta)
+    
+def circle(dim,width):
+    """This function creates a circle.
+    
+    Parameters
+    ----------
+    dim: int
+        Size of the 2D array
+    width: int
+        diameter of the hexagon
+        
+    Returns
+    -------
+    pupil: float array (sz,sz)
+        2D array circular pupil mask
+    """
+    x = np.arange(dim)-dim/2.0
+    xy = np.meshgrid(x,x)
+    xx = xy[1]
+    yy = xy[0]
+    circle = ((xx**2+yy**2) < (width/2.0)**2).astype(float)
+    return circle
+    
+    
 def hexagon(dim, width):
-	"""This function creates a hexagon.
-	
-	Parameters
-	----------
-	dim: int
-		Size of the 2D array
-	width: int
-		flat-to-flat width of the hexagon
-		
-	Returns
-	-------
-	pupil: float array (sz,sz)
-		2D array hexagonal pupil mask
-	"""
-	x = np.arange(dim)-dim/2.0
-	xy = np.meshgrid(x,x)
-	xx = xy[1]
-	yy = xy[0]
-	w = np.where( (yy < width/2) * (yy > (-width/2)) * \
-	 (yy < (width-np.sqrt(3)*xx)) * (yy > (-width+np.sqrt(3)*xx)) * \
-	 (yy < (width+np.sqrt(3)*xx)) * (yy > (-width-np.sqrt(3)*xx)))
-	hex = np.zeros((dim,dim))
-	hex[w]=1.0
-	return hex
-	
+    """This function creates a hexagon.
+    
+    Parameters
+    ----------
+    dim: int
+        Size of the 2D array
+    width: int
+        flat-to-flat width of the hexagon
+        
+    Returns
+    -------
+    pupil: float array (sz,sz)
+        2D array hexagonal pupil mask
+    """
+    x = np.arange(dim)-dim/2.0
+    xy = np.meshgrid(x,x)
+    xx = xy[1]
+    yy = xy[0]
+    w = np.where( (yy < width/2) * (yy > (-width/2)) * \
+     (yy < (width-np.sqrt(3)*xx)) * (yy > (-width+np.sqrt(3)*xx)) * \
+     (yy < (width+np.sqrt(3)*xx)) * (yy > (-width-np.sqrt(3)*xx)))
+    hex = np.zeros((dim,dim))
+    hex[w]=1.0
+    return hex
+    
 def snell(u, f, n_i, n_f):
-	"""Snell's law at an interface between two dielectrics
-	
-	Parameters
-	----------
-	u: float array(3)
-		Input unit vector
-	f: float array(3)
-		surface normal  unit vector
-	n_i: float
-		initial refractive index
-	n_f: float
-		final refractive index.
-	"""
-	u_p = u - np.sum(u*f)*f
-	u_p /= np.sqrt(np.sum(u_p**2))
-	theta_i = np.arccos(np.sum(u*f))
-	theta_f = np.arcsin(n_i*np.sin(theta_i)/n_f)
-	v = u_p*np.sin(theta_f) + f*np.cos(theta_f)
-	return v
+    """Snell's law at an interface between two dielectrics
+    
+    Parameters
+    ----------
+    u: float array(3)
+        Input unit vector
+    f: float array(3)
+        surface normal  unit vector
+    n_i: float
+        initial refractive index
+    n_f: float
+        final refractive index.
+    """
+    u_p = u - np.sum(u*f)*f
+    u_p /= np.sqrt(np.sum(u_p**2))
+    theta_i = np.arccos(np.sum(u*f))
+    theta_f = np.arcsin(n_i*np.sin(theta_i)/n_f)
+    v = u_p*np.sin(theta_f) + f*np.cos(theta_f)
+    return v
 
 def grating_sim(u, l, s, ml_d, refract=False):
-	"""This function computes an output unit vector based on an input unit
-	vector and grating properties.
+    """This function computes an output unit vector based on an input unit
+    vector and grating properties.
 
-	Math: v \cdot l = u \cdot l (reflection)
+    Math: v \cdot l = u \cdot l (reflection)
           v \cdot s = u \cdot s + ml_d
     The blaze wavelength is when m \lambda = 2 d sin(theta)
      i.e. ml_d = 2 sin(theta)
@@ -201,40 +226,40 @@ def grating_sim(u, l, s, ml_d, refract=False):
     x : to the right
     y : out of page
     z : down the page
-	
-	Parameters
-	----------
-	u: float array(3)
-		initial unit vector
-	l: float array(3)
-		unit vector along grating lines
-	s: float array(3)
-		unit vector along grating surface, perpendicular to lines
-	ml_d: float
-		order * \lambda/d
-	refract: bool
-		Is the grating a refractive grating? 
-	"""
-	if (np.abs(np.sum(l*s)) > 1e-3):	
-		print('Error: input l and s must be orthogonal!')
-		raise UserWarning
-	n = np.cross(s,l)
-	if refract:
-		n *= -1
-	v_l = np.sum(u*l)
-	v_s = np.sum(u*s) + ml_d
-	v_n = np.sqrt(1-v_l**2 - v_s**2)
-	v = v_l*l + v_s*s + v_n*n
-	
-	return v
-	
+    
+    Parameters
+    ----------
+    u: float array(3)
+        initial unit vector
+    l: float array(3)
+        unit vector along grating lines
+    s: float array(3)
+        unit vector along grating surface, perpendicular to lines
+    ml_d: float
+        order * \lambda/d
+    refract: bool
+        Is the grating a refractive grating? 
+    """
+    if (np.abs(np.sum(l*s)) > 1e-3):    
+        print('Error: input l and s must be orthogonal!')
+        raise UserWarning
+    n = np.cross(s,l)
+    if refract:
+        n *= -1
+    v_l = np.sum(u*l)
+    v_s = np.sum(u*s) + ml_d
+    v_n = np.sqrt(1-v_l**2 - v_s**2)
+    v = v_l*l + v_s*s + v_n*n
+    
+    return v
+    
 def rotate_xz(u, theta_deg):
-	"""Rotates a vector u in the x-z plane, clockwise where x is up and
-	z is right"""
-	th = np.radians(theta_deg)
-	M = np.array([[np.cos(th),0,np.sin(th)],[0,1,0],[-np.sin(th),0,np.cos(th)]])
-	return np.dot(M, u)
-	
+    """Rotates a vector u in the x-z plane, clockwise where x is up and
+    z is right"""
+    th = np.radians(theta_deg)
+    M = np.array([[np.cos(th),0,np.sin(th)],[0,1,0],[-np.sin(th),0,np.cos(th)]])
+    return np.dot(M, u)
+    
 def nglass(l, glass='sio2'):
     """Refractive index of fused silica and other glasses. Note that C is
     in microns^{-2}
