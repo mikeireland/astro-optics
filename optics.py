@@ -93,6 +93,67 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
     else:
         return radial_prof
 
+def fresnel(wf, m_per_pix, d, wave):
+    """Propagate a wave by Fresnel diffraction
+    
+    Parameters
+    ----------
+    wf: float array
+        Wavefront, i.e. a complex electric field in the scalar approximation.
+    m_per_pix: float
+        Scale of the pixels in the input wavefront in metres.
+    d: float
+        Distance to propagate the wavefront.
+    wave: float
+        Wavelength in metres.
+        
+    Returns
+    -------
+    wf_new: float array
+        Wavefront after propagating.
+    """
+    #Notation on Mike's board
+    sz = wf.shape[0]
+    if (wf.shape[0] != wf.shape[1]):
+        print("ERROR: Input wavefront must be square")
+        raise UserWarning
+    
+    #The code below came from the board, i.e. via Huygen's principle.
+    #We got all mixed up when converting to Fourier transform co-ordinates.
+    #Co-ordinate axis of the wavefront. Not that 0 must be in the corner.
+    #x = (((np.arange(sz)+sz/2) % sz) - sz/2)*m_per_pix
+    #xy = np.meshgrid(x,x)
+    #rr =np.sqrt(xy[0]**2 + xy[1]**2)
+    #h_func = np.exp(1j*np.pi*rr**2/wave/d)
+    #h_ft = np.fft.fft2(h_func)
+    
+    #Co-ordinate axis of the wavefront Fourier transform. Not that 0 must be in the corner.
+    #x is in cycles per wavefront dimension.
+    x = (((np.arange(sz)+sz/2) % sz) - sz/2)/m_per_pix/sz
+    xy = np.meshgrid(x,x)
+    uu =np.sqrt(xy[0]**2 + xy[1]**2)
+    h_ft = np.exp(1j*np.pi*uu**2*wave*d)
+    
+    g_ft = np.fft.fft2(np.fft.fftshift(wf))*h_ft
+    wf_new = np.fft.ifft2(g_ft)
+    return np.fft.fftshift(wf_new)
+
+def curved_wf(sz,m_per_pix,f_length,wave):
+    """A curved wavefront centered on the *middle*
+    of the python array.
+    
+    Try this at home:
+    
+    The wavefront phase we want is:
+    phi = alpha*n**2, with
+    alpha = 0.5*m_per_pix**2/wave/f_length
+    """
+    x = np.arange(sz) - sz/2
+    xy = np.meshgrid(x,x)
+    rr =np.sqrt(xy[0]**2 + xy[1]**2)
+    phase = 0.5*m_per_pix**2/wave/f_length*rr**2
+    return np.exp(2j*np.pi*phase)
+
 def kmf(sz):
     """This function creates a periodic wavefront produced by Kolmogorov turbulence. 
     It SHOULD normalised so that the variance at a distance of 1 pixel is 1 radian^2,
