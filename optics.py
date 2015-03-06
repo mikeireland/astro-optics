@@ -5,6 +5,7 @@ Exercise for Adam: use np.fft.fft2 and np.fft.fftshift to make a Fraunhofer
 diffraction function.
 """
 
+from __future__ import print_function
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -172,9 +173,17 @@ def kmf(sz):
     """
     xy = np.meshgrid(np.arange(sz/2 + 1)/float(sz), (((np.arange(sz) + sz/2) % sz)-sz/2)/float(sz))
     dist2 = np.maximum( xy[1]**2 + xy[0]**2, 1e-12)
-    ft_wf = np.exp(2j * np.pi * np.random.random((sz,sz/2+1)))*dist2**(-11.0/12.0)
+    ft_wf = np.exp(2j * np.pi * np.random.random((sz,sz/2+1)))*dist2**(-11.0/12.0)*sz/15.81
     ft_wf[0,0]=0
     return np.fft.irfft2(ft_wf)
+    
+def test_kmf(sz,ntests):
+    vars = np.zeros(ntests)
+    for i in range(ntests):
+        wf = kmf(sz)
+        vars[i] = 0.5* ( np.mean((wf[1:,:] - wf[:-1,:])**2) + \
+                      np.mean((wf[:,1:] - wf[:,:-1])**2) )
+    print("Mean var: {0:7.3e} Sdev var: {1:7.3e}".format(np.mean(vars),np.std(vars)))
     
 def moffat(theta, hw, beta=4.0):
     """This creates a moffatt function for simulating seeing.
