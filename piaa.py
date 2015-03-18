@@ -220,7 +220,7 @@ def annulus_gauss_fresnel(alpha,r0,ignore_piaa=False):
     
     
 
-def generate_atmosphere(npix, wavelength, pixel_size):
+def generate_atmosphere(npix, wavelength, pixel_size, seeing):
     """ Applies an atmosphere in the form of Kolmogorov turbulence to an initial wavefront and scales
     Parameters
     ----------
@@ -240,16 +240,18 @@ def generate_atmosphere(npix, wavelength, pixel_size):
     
     """
     
-    seeing = 1.0
+    #!!! MJI This formula was wrong - you used arcsec not radians
+    seeing_in_radians = np.radians(seeing/3600.)
     # Generate the Kolmogorov turbulence
     turbulence = optics.kmf(npix)
     
     # Calculate r0 (Fried's parameter), which is a measure of the strength of seeing distortions
-    r0 = seeing / 0.98 / wavelength
+    #!!! MJI This formula was wrong
+    r0 = 0.98 * wavelength / seeing_in_radians 
     
     # Apply the atmosphere and scale
     wf_in_radians = turbulence * np.sqrt(6.88*(pixel_size/r0)**(5.0/3.0))
-    
+        
     # Convert the wavefront to an electric field
     electric_field = np.exp(1j * wf_in_radians)
     
@@ -340,8 +342,10 @@ def test():
     n_med = 1.5                         # Refraction index of the medium
     thickness = 15.0                    # Physical thickness between the PIAA lenses
     radius_in_mm = 1.0                  # Physical radius
+    telescope_magnification = 250./2.0  #Telescope magnification prior to the exit pupil plane
+    seeing_in_arcsec = 1.0              #Seeing in arcseconds before magnification
     real_heights = True                 # ...
-    dx = 5.0/1000.0                     # Resolution/sampling in um/pixel
+    dx = 5.0/1000.0                     # Resolution/sampling in mm/pixel
     npix = 1024                         # Number of pixels for the simulation
     wavelength_in_mm = 0.5/1000.0       # Wavelength of light in mm
     focal_length = 200                  # Focal length of the system
@@ -351,7 +355,8 @@ def test():
     
     # Compute the input electric field (annulus x distorted wavefront)
     annulus = (optics.circle(npix,(radius_in_mm * 2)/dx) - optics.circle(npix, (radius_in_mm * 2 * r0)/dx))
-    efield_in = annulus * generate_atmosphere(npix, wavelength_in_mm, dx)
+    #!!! MJI This formula was wrong - you need to turn the wavefront into wavefront phase.
+    efield_in = annulus * np.exp(1j * generate_atmosphere(npix, wavelength_in_mm, dx, seeing_in_arcsec*telescope_magnification))
     
     # Pass the electric field through the first PIAA lens
     efield_lens1 = efield_in * np.exp(1j * piaa_lens1)
@@ -365,6 +370,7 @@ def test():
     # Propagate the electric field to a distant focus
     efield_lens2_to_focus = efield_lens2_after*optics.curved_wf(npix, dx, focal_length, wavelength_in_mm)
     efield_focus = optics.fresnel(efield_lens2_to_focus, dx, focal_length, wavelength_in_mm)
+    
     
     # Plot the electric field at each stage
     plt.clf()
