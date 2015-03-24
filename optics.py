@@ -8,6 +8,8 @@ diffraction function.
 from __future__ import print_function
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy import special
+from scipy import optimize
 
 def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return_nr=False, 
         binsize=0.5, weights=None, steps=False, interpnan=False, left=None, right=None, return_max=False):
@@ -361,3 +363,70 @@ def nglass(l, glass='sio2'):
             n += B[i]*l**2/(l**2 - C[i])
     return np.sqrt(n)
     
+
+def join_bessel(U,V,j):
+    """In order to solve the Laplace equation in cylindrical co-ordinates, both the
+    electric field and its derivative must be continuous at the edge of the fiber...
+    i.e. the Bessel J and Bessel K have to be joined together. 
+    
+    The solution of this equation is the n_eff value that satisfies this continuity
+    relationship"""
+    W = np.sqrt(V**2 - U**2)
+    return U*special.jn(j+1,U)*special.kn(j,W) - W*special.kn(j+1,W)*special.jn(j,U)
+    
+def neff(V, accurate_roots=True):
+ """Find the effective indices of all modes for a given value of 
+ the fiber V number. """
+ delu = 0.04
+ U = np.arange(delu/2,V,delu)
+ W = np.sqrt(V**2 - U**2)
+ all_roots=np.array([])
+ n_per_j=np.array([],dtype=int)
+ n_modes=0
+ for j in range(int(V+1)):
+   f = U*special.jn(j+1,U)*special.kn(j,W) - W*special.kn(j+1,W)*special.jn(j,U)
+   crossings = np.where(f[0:-1]*f[1:] < 0)[0]
+   roots = U[crossings] - f[crossings]*( U[crossings+1] - U[crossings] )/( f[crossings+1] - f[crossings] )
+   if accurate_roots:
+     for i,root in enumerate(roots):
+         roots[i] = optimize.newton(join_bessel, root, args=(V,j))
+   #import pdb; pdb.set_trace()
+   if (j == 0): 
+     n_modes = n_modes + len(roots)
+     n_per_j = np.append(n_per_j, len(roots))
+   else:
+     n_modes = n_modes + 2*len(roots)
+     n_per_j = np.append(n_per_j, len(roots)) #could be 2*length(roots) to account for sin and cos.
+   all_roots = np.append(all_roots,roots)
+ return all_roots, n_per_j
+ 
+def mode_2d(V, r, j=0, n=0, sampling=0.3,  sz=1024):
+    """Create a 2D mode profile. 
+    
+    Parameters
+    ----------
+    V: Fiber V number
+    
+    r: core radius in microns
+    
+    sampling: microns per pixel
+    
+    n: radial order of the mode (0 is fundumental)
+    
+    j: azimuthal order of the mode (0 is pure radial modes)
+    TODO: Nonradial modes."""
+    #First, find the neff values...
+    u_all,n_per_j = neff(V)
+    ix = np.sum(n_per_j[0:j]) + n
+    U0 = u_all[ix]
+    W0 = np.sqrt(V**2 - U0**2)
+    x = (np.arange(sz)-sz/2)*sampling/r
+    xy = np.meshgrid(x,x)
+    r = np.sqrt(xy[0]**2 + xy[1]**2)
+    win = np.where(r < 1)
+    wout = np.where(r >= 1)
+    the_mode = np.zeros( (sz,sz) )
+    the_mode[win] = special.jn(j,r[win]*U0)
+    scale = special.jn(j,U0)/special.kn(j,W0)
+    the_mode[wout] = scale * special.kn(j,r[wout]*W0)
+    return the_mode/np.sqrt(np.sum(the_mode**2))
