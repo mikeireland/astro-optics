@@ -222,7 +222,7 @@ def circle(dim,width):
     dim: int
         Size of the 2D array
     width: int
-        diameter of the hexagon
+        diameter of the circle
         
     Returns
     -------
@@ -236,6 +236,29 @@ def circle(dim,width):
     circle = ((xx**2+yy**2) < (width/2.0)**2).astype(float)
     return circle
     
+def square(dim, width):
+    """This function creates a square.
+    
+    Parameters
+    ----------
+    dim: int
+        Size of the 2D array
+    width: int
+        width of the square
+        
+    Returns
+    -------
+    pupil: float array (sz,sz)
+        2D array square pupil mask
+    """
+    x = np.arange(dim)-dim/2.0
+    xy = np.meshgrid(x,x)
+    xx = xy[1]
+    yy = xy[0]
+    w = np.where( (yy < width/2) * (yy > (-width/2)) * (xx < width/2) * (xx > (-width/2)))
+    square = np.zeros((dim,dim))
+    square[w] = 1.0
+    return square
     
 def hexagon(dim, width):
     """This function creates a hexagon.
