@@ -14,6 +14,7 @@ import optics
 import pdb
 from scipy import integrate
 import matplotlib.pyplot as plt
+import utils
 
 def ds_annulus_gauss(r, s, alpha, r0):
     """An annulus morphing into a (truncated) Gaussian. Only
@@ -450,27 +451,20 @@ def propagate_and_save(directory, distance_step):
     electric_field = lens.calculate_input_e_field()
     
     # Save the initial plot
-    plt.clf()
-    plt.imshow(np.abs(electric_field)**0.5 )
-    plt.title('Electric Field: Input')
-    imagename = "%05d" % file_number
-    plt.savefig( (directory + (imagename) + ".jpg" ) )
+    utils.save_plot(np.abs(electric_field)**0.5, 'Electric Field: Input', directory, ("%05d" % file_number))
     file_number += 1
     
     # Pass the electric field through the first PIAA lens
     electric_field = lens.apply_piaa_lens(lens.piaa_lens1, electric_field)
     
     #Propagate the electric field through glass to the second lens
-    for step in xrange(1, int(lens.thickness), distance_step):
+    for step in xrange(1, int(lens.thickness) + 1, distance_step):
         # Propagate the field by the distance step
         electric_field = lens.propagate(electric_field, distance_step / lens.n_med)
         
         # Save the plot at each step
-        plt.clf()
-        plt.imshow(np.abs(electric_field)**0.5 )
-        plt.title( ('Electric Field: ' + str(distance_step * step) + ' / ' + str(lens.thickness) + " mm from PIAA Lens #1") ) 
-        imagename = "%05d" % file_number
-        plt.savefig( (directory + (imagename) + ".jpg" ) )
+        title = 'Electric Field: ' + str(distance_step * step) + ' / ' + str(lens.thickness) + " mm from PIAA Lens #1"
+        utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
         file_number += 1
     
     # Pass the electric field through the second lens
@@ -479,21 +473,25 @@ def propagate_and_save(directory, distance_step):
     # Propagate the electric field to a distant focus
     electric_field = lens.curved_wavefront(electric_field)
     
-    #Propagate the electric field through glass to the second lens
-    for step in xrange(1, int(lens.focal_length), distance_step):
+    #Propagate the electric field to focus beyond the second lens
+    for step in xrange(1, int(lens.focal_length) + 1, distance_step):
         # Propagate the field by the distance step
         electric_field = lens.propagate(electric_field, distance_step)
         
         # Save the plot at each step
-        plt.clf()
-        plt.imshow(np.abs(electric_field)**0.5 )
-        plt.title( ('Electric Field: ' + str(distance_step * step) + ' / ' + str(lens.focal_length) + " mm from Focus After PIAA Lens #2") ) 
-        imagename = "%05d" % file_number
-        plt.savefig( (directory + (imagename) + ".jpg" ) )
+        title = 'Electric Field: ' + str(distance_step * step) + ' / ' + str(lens.focal_length) + " mm from Focus After PIAA Lens #2" 
+        utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
         file_number += 1
     
+    # Multiply by curved wavefront and propagate further
+    
+    # Multiply by square lenselt, propagate through glass (forget for the moment) and multiply by curved wf
 
-        
+    # Propagate to final plane
+    
+    # Compute the near field profile and the fibre coupling
+    
+    
         
 def test():
     """Runs a simulation of the following steps:

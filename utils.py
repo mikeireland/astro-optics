@@ -2,6 +2,32 @@
 
 Author: Adam Rains 
 """
+import pylab as pl
+import cv2
+import glob
+
+def save_plot(data, title, directory, imagename, format='.jpg'):
+    """
+    
+    Parameters
+    ----------
+    
+    data: 2D numpy.array
+        The data to be plotted and saved. Will not accept complex numbers.
+    title: string
+        The title of the plot.
+    directory: string
+        The directory to save the plot to, ending with a "/"
+    imagename: string
+        The name of the plot to be saved.
+    format: string  
+        The file formate of the saved image.
+    """
+    
+    pl.clf()
+    pl.imshow(data) 
+    pl.title(title)
+    pl.savefig( (directory + (imagename) + format ) )
 
 def create_movie(directory, image_format='jpg', fps=5, video_name='video.avi'):
     """Create a movie using a sequence of images
@@ -17,8 +43,6 @@ def create_movie(directory, image_format='jpg', fps=5, video_name='video.avi'):
     video_name: string  
         The filename of the resulting video (including format)
     """
-    import cv2
-    import glob
     
     # Get a list of the file paths of all images matching the file format and sort them
     image_paths = glob.glob( (directory + "*." +image_format) )
