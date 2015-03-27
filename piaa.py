@@ -14,6 +14,7 @@ import optics
 import pdb
 from scipy import integrate
 import matplotlib.pyplot as plt
+import utils
 
 def ds_annulus_gauss(r, s, alpha, r0):
     """An annulus morphing into a (truncated) Gaussian. Only
@@ -320,7 +321,178 @@ def create_piaa_lenses(alpha, r0, frac_to_focus, delta, dt, n_med, thickness, ra
     
     # PIAA lenses are constructed, return the result
     return piaa_lens1, piaa_lens2
+
     
+class PIAA_System:
+    """A class to model the behaviour of the PIAA system, including all lenses, propagation and fibre fitting.
+    """
+    def __init__(self):
+        """Constructs the class with the following list of default parameters.
+        """        
+        self.alpha = 2.0                         # Gaussian exponent term
+        self.r0 = 0.40                           # Fractional size of secondary mirror/obstruction
+        self.frac_to_focus = 1e-6                # Fraction (z_s2 - z_s1)/(z_f - z_s1)
+        self.delta=1e-2                          # Radius of annular dead zone for second pupil
+        self.dt=1e-3                             # Integration step size
+        self.n_med = 1.5                         # Refraction index of the medium
+        self.thickness = 15.0                    # Physical thickness between the PIAA lenses
+        self.radius_in_mm = 1.0                  # Physical radius
+        self.telescope_magnification = 250./2.0  #Telescope magnification prior to the exit pupil plane
+        self.seeing_in_arcsec = 1.0              #Seeing in arcseconds before magnification
+        self.real_heights = True                 # ...
+        self.dx = 5.0/1000.0                     # Resolution/sampling in mm/pixel
+        self.npix = 1024                         # Number of pixels for the simulation
+        self.wavelength_in_mm = 0.5/1000.0       # Wavelength of light in mm
+        self.focal_length = 200                  # Focal length of the system
+        
+        
+    def create_piaa(self):
+        """Creates the PIAA lenses using the stored physical parameters
+        """ 
+        self.piaa_lens1, self.piaa_lens2 = create_piaa_lenses(self.alpha, self.r0, self.frac_to_focus, self.delta, self.dt, self.n_med, self.thickness, self.radius_in_mm, self.real_heights, self.dx, self.npix, self.wavelength_in_mm)
+ 
+    def create_annulus(self):
+        """Compute the input electric field (annulus x distorted wavefront)
+        """ 
+        self.annulus = (optics.circle(self.npix,(self.radius_in_mm * 2)/self.dx) - optics.circle(self.npix, (self.radius_in_mm * 2 * self.r0)/self.dx))
+        
+    def calculate_input_e_field(self):
+        """Compute the input electric field using the annulus and Kolmogorov turbulence
+        
+        Returns
+        -------
+        efield_in: 2D numpy.ndarray
+            The electric field.
+        """
+        self.efield_in = self.annulus * np.exp(1j * generate_atmosphere(self.npix, self.wavelength_in_mm, self.dx, self.seeing_in_arcsec * self.telescope_magnification))
+    
+        return self.efield_in
+        
+    def apply_piaa_lens(self, piaa_lens, efield_before):
+        """Pass an electric field through a PIAA lens
+        
+        Parameters
+        ----------
+        piaa_lens: 2D numpy.ndarray
+            The PIAA lens to pass the electric field through.
+        efield_before: 2D numpy.ndarray
+            The electric field before the PIAA lens   
+            
+        Returns
+        -------
+        efield_after: 2D numpy.ndarray
+            The electric field after the PIAA lens
+        """
+        efield_after = efield_before * np.exp(1j * piaa_lens)
+        
+        return efield_after
+        
+    def curved_wavefront(self, efield_before):
+        """Convert the electric field into a curved wavefront
+        
+        Parameters
+        ----------
+        efield_before: 2D numpy.ndarray
+            The electric field before the curved wavefront    
+            
+        Returns
+        -------
+        efield_after: 2D numpy.ndarray
+            The electric field after the PIAA lens
+        """    
+        # Propagate the electric field to a distant focus
+        efield_after = efield_before * optics.curved_wf(self.npix, self.dx, self.focal_length, self.wavelength_in_mm)
+        
+        return efield_after
+    
+    def propagate(self, efield_before, distance):
+        """Propagate the electric field a certain distance
+        
+        Parameters
+        ----------
+        efield_before: 2D numpy.ndarray
+            The electric field before being propagated  
+        distance: integer
+            The distance to propagate the electric field
+        Returns
+        -------
+        efield_after: 2D numpy.ndarray
+            The electric field after the PIAA lens
+        """            
+        efield_after = optics.fresnel(efield_before, self.dx, distance, self.wavelength_in_mm)
+        
+        return efield_after
+        
+        
+    
+def propagate_and_save(directory, distance_step):
+    """Creates and saves plots for the PIAA system in increments of the specified distance step.
+    
+    Parameters
+    ----------
+    directory: string
+        The directory to save the plots to.
+    
+    distance_step: integer
+        The distance to propagate the wavefront forward for each plot
+        Should be a fraction of the thickness and focal length
+    """
+    
+    # Create the lens and its annulus and PIAA components
+    lens = PIAA_System()
+    lens.create_piaa()
+    lens.create_annulus()
+    lens.create_piaa()
+    
+    # The image count to uniquely identify each image created
+    file_number = 0
+    
+    # Compute the input electric field (annulus x distorted wavefront)
+    electric_field = lens.calculate_input_e_field()
+    
+    # Save the initial plot
+    utils.save_plot(np.abs(electric_field)**0.5, 'Electric Field: Input', directory, ("%05d" % file_number))
+    file_number += 1
+    
+    # Pass the electric field through the first PIAA lens
+    electric_field = lens.apply_piaa_lens(lens.piaa_lens1, electric_field)
+    
+    #Propagate the electric field through glass to the second lens
+    for step in xrange(1, int(lens.thickness) + 1, distance_step):
+        # Propagate the field by the distance step
+        electric_field = lens.propagate(electric_field, distance_step / lens.n_med)
+        
+        # Save the plot at each step
+        title = 'Electric Field: ' + str(distance_step * step) + ' / ' + str(lens.thickness) + " mm from PIAA Lens #1"
+        utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
+        file_number += 1
+    
+    # Pass the electric field through the second lens
+    electric_field = lens.apply_piaa_lens(lens.piaa_lens2, electric_field)
+    
+    # Propagate the electric field to a distant focus
+    electric_field = lens.curved_wavefront(electric_field)
+    
+    #Propagate the electric field to focus beyond the second lens
+    for step in xrange(1, int(lens.focal_length) + 1, distance_step):
+        # Propagate the field by the distance step
+        electric_field = lens.propagate(electric_field, distance_step)
+        
+        # Save the plot at each step
+        title = 'Electric Field: ' + str(distance_step * step) + ' / ' + str(lens.focal_length) + " mm from Focus After PIAA Lens #2" 
+        utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
+        file_number += 1
+    
+    # Multiply by curved wavefront and propagate further
+    
+    # Multiply by square lenselt, propagate through glass (forget for the moment) and multiply by curved wf
+
+    # Propagate to final plane
+    
+    # Compute the near field profile and the fibre coupling
+    
+    
+        
 def test():
     """Runs a simulation of the following steps:
     1 - Apply atmospheric turbulence
@@ -355,6 +527,7 @@ def test():
     
     # Compute the input electric field (annulus x distorted wavefront)
     annulus = (optics.circle(npix,(radius_in_mm * 2)/dx) - optics.circle(npix, (radius_in_mm * 2 * r0)/dx))
+    
     #!!! MJI This formula was wrong - you need to turn the wavefront into wavefront phase.
     efield_in = annulus * np.exp(1j * generate_atmosphere(npix, wavelength_in_mm, dx, seeing_in_arcsec*telescope_magnification))
     
@@ -381,16 +554,21 @@ def test():
     plt.title('Electric field in')
     
     plt.figure(1)
+    plt.imshow(np.abs(efield_lens1)**0.5 )
+    plt.draw()
+    plt.title('Electric field after first lens')
+    
+    plt.figure(2)
     plt.imshow(np.abs(efield_lens2_before)**0.5 )
     plt.draw()
     plt.title('Electric field before second lens')
     
-    plt.figure(2)
+    plt.figure(3)
     plt.imshow(np.abs(efield_lens2_after)**0.5 )
     plt.draw()
     plt.title('Electric field after second lens')
     
-    plt.figure(3)
+    plt.figure(4)
     plt.imshow(np.abs(efield_focus))
     plt.draw()
     plt.title('Electric field at focus after second lens')
