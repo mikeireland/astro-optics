@@ -453,3 +453,7 @@ def mode_2d(V, r, j=0, n=0, sampling=0.3,  sz=1024):
     scale = special.jn(j,U0)/special.kn(j,W0)
     the_mode[wout] = scale * special.kn(j,r[wout]*W0)
     return the_mode/np.sqrt(np.sum(the_mode**2))
+
+def compute_v_number(wavelength_in_mm, core_radius, numerical_aperture):
+    v = 2 * np.pi / wavelength_in_mm * core_radius * numerical_aperture
+    return v

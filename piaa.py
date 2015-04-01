@@ -13,8 +13,10 @@ import numpy as np
 import optics
 import pdb
 from scipy import integrate
+from scipy import interpolate
 import matplotlib.pyplot as plt
 import utils
+import math
 
 def ds_annulus_gauss(r, s, alpha, r0):
     """An annulus morphing into a (truncated) Gaussian. Only
@@ -340,14 +342,15 @@ class PIAA_System:
         self.telescope_magnification = 250./2.0  #Telescope magnification prior to the exit pupil plane
         self.seeing_in_arcsec = 1.0              #Seeing in arcseconds before magnification
         self.real_heights = True                 # ...
-        self.dx = 5.0/1000.0                     # Resolution/sampling in mm/pixel
-        self.npix = 1024                         # Number of pixels for the simulation
+        self.dx = 1.0/1000.0                     # Resolution/sampling in mm/pixel
+        self.npix = 4096                         # Number of pixels for the simulation
         self.wavelength_in_mm = 0.5/1000.0       # Wavelength of light in mm
         self.focal_length_1 = 200                # Focal length of wavefront after PIAA lens #2
         self.focal_length_2 = 3.02               # Focal length of 3.02mm lens
-        self.focal_length_3 = 4.62               # Focal length of 4.64mm square lenslet
+        self.focal_length_3 = 4.64               # Focal length of 4.64mm square lenslet
         self.lenslet_width = 1.0                 # Width of the square lenslet in mm
-        self.fibre_radius = 0.0017               # Width of the optical fibre in mm
+        self.fibre_core_radius = 0.00125         # Width of the optical fibre in mm
+        self.numerical_aperture = 0.13           # Numerical aperture of the optical fibre
         
         
         
@@ -361,16 +364,21 @@ class PIAA_System:
         """ 
         self.annulus = (optics.circle(self.npix,(self.radius_in_mm * 2)/self.dx) - optics.circle(self.npix, (self.radius_in_mm * 2 * self.r0)/self.dx))
         
-    def calculate_input_e_field(self):
+    def calculate_input_e_field(self, apply_turbulence=True):
         """Compute the input electric field using the annulus and Kolmogorov turbulence
         
         Returns
         -------
         efield_in: 2D numpy.ndarray
             The electric field.
+        apply_turbulence: boolean
+            Whether to apply atmospheric turbulence or not
         """
-        self.efield_in = self.annulus * np.exp(1j * generate_atmosphere(self.npix, self.wavelength_in_mm, self.dx, self.seeing_in_arcsec * self.telescope_magnification))
-    
+        if apply_turbulence:
+            self.efield_in = self.annulus * np.exp(1j * generate_atmosphere(self.npix, self.wavelength_in_mm, self.dx, self.seeing_in_arcsec * self.telescope_magnification))
+        else:
+            self.efield_in = self.annulus
+            
         return self.efield_in
         
     def apply_piaa_lens(self, piaa_lens, efield_before):
@@ -446,8 +454,25 @@ class PIAA_System:
         efield_after = optics.square(self.npix, self.lenslet_width/self.dx) * efield_before
         
         return efield_after
+        
+    def compute_coupling(self, electric_field):
+        # Calculate the V number for the model
+        v = optics.compute_v_number(self.wavelength_in_mm, self.fibre_core_radius, self.numerical_aperture)
+        
+        print str(v) + ", " + str(self.radius_in_mm) + ", " + str(self.fibre_core_radius) + ", " + str(self.numerical_aperture)
+        
+        # Use the V number to calculate the mode
+        fibre_mode = optics.mode_2d(v, self.fibre_core_radius, sampling=self.dx, sz=self.npix)
+        
+        # Compute overlap integral
+        num = np.abs(integrate.trapz(integrate.trapz(fibre_mode * np.ma.conjugate(electric_field))))**2
+        den = integrate.trapz(integrate.trapz(np.ma.abs(fibre_mode)**2)) * integrate.trapz(integrate.trapz(np.ma.abs(electric_field)**2))
+        
+        return num / den
+        
+        
     
-def propagate_and_save(directory, distance_step):
+def propagate_and_save(directory, distance_step, dz, alpha, apply_turbulence=True):
     """Creates and saves plots for the PIAA system in increments of the specified distance step.
     
     Parameters
@@ -468,42 +493,106 @@ def propagate_and_save(directory, distance_step):
     # The image count to uniquely identify each image created
     file_number = 0
     
-    # Compute the input electric field (annulus x distorted wavefront)
-    electric_field = lens.calculate_input_e_field()
-    
-    # Save the initial plot
+    # [1, 2] - Compute the input electric field (annulus x distorted wavefront from atmosphere) 
+    print "[1, 2] - Compute Input"
+    electric_field = lens.calculate_input_e_field(apply_turbulence)
     utils.save_plot(np.abs(electric_field)**0.5, 'Electric Field: Input', directory, ("%05d" % file_number))
     file_number += 1
     
-    # Pass the electric field through the first PIAA lens
+    # [3] - Pass the electric field through the first PIAA lens
+    print "[3] - PIAA #1"
     electric_field = lens.apply_piaa_lens(lens.piaa_lens1, electric_field)
     
-    #Propagate the electric field through glass to the second lens
-    for step in xrange(1, int(lens.thickness) + 1, distance_step):
-        # Propagate the field by the distance step
-        electric_field = lens.propagate(electric_field, distance_step / lens.n_med)
+    # [4] - Propagate the electric field through glass to the second lens
+    print "[4] - PIAA #1 - #2"
+    distance_to_piaa_2 = lens.thickness
+    remaining_distance_to_piaa_2 = distance_to_piaa_2
+    while remaining_distance_to_piaa_2 > 0:
+        # Propagate the field by the distance step (or the distance remaining if it is smaller than the step)
+        if remaining_distance_to_piaa_2 > distance_step:
+            electric_field = lens.propagate(electric_field, distance_step / lens.n_med)
+            remaining_distance_to_piaa_2 -= distance_step   
+        else:
+            electric_field = lens.propagate(electric_field, remaining_distance_to_piaa_2 / lens.n_med)
+            remaining_distance_to_piaa_2 = 0
         
         # Save the plot at each step
-        title = 'Electric Field: ' + str(distance_step * step) + ' / ' + str(lens.thickness) + " mm from PIAA Lens #1"
+        title = 'Electric Field: ' + str(distance_to_piaa_2 - remaining_distance_to_piaa_2) + ' / ' + str(distance_to_piaa_2) + " mm from PIAA Lens #2"
         utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
-        file_number += 1
+        file_number += 1 
+       
     
-    # Pass the electric field through the second lens
+    # [5] - Pass the electric field through the second PIAA lens
+    print "[5] - PIAA #2"
     electric_field = lens.apply_piaa_lens(lens.piaa_lens2, electric_field)
-    
-    # Propagate the electric field to a distant focus
     electric_field = lens.curved_wavefront(electric_field, lens.focal_length_1)
     
-    #Propagate the electric field to focus beyond the second lens
-    for step in xrange(1, int(lens.focal_length) + 1, distance_step):
-        # Propagate the field by the distance step
-        electric_field = lens.propagate(electric_field, distance_step)
+    # [6] - Propagate the electric field to the 3.02mm lens
+    print "[6] - PIAA #2 - 3.02mm Lens"
+    distance_to_lens = lens.focal_length_1 + lens.focal_length_2 + dz
+    remaining_distance_to_lens = distance_to_lens
+    while remaining_distance_to_lens > 0:
+        # Propagate the field by the distance step (or the distance remaining if it is smaller than the step)
+        if remaining_distance_to_lens > distance_step:
+            electric_field = lens.propagate(electric_field, distance_step)
+            remaining_distance_to_lens -= distance_step   
+        else:
+            electric_field = lens.propagate(electric_field, remaining_distance_to_lens)
+            remaining_distance_to_lens = 0
         
         # Save the plot at each step
-        title = 'Electric Field: ' + str(distance_step * step) + ' / ' + str(lens.focal_length) + " mm from Focus After PIAA Lens #2" 
+        title = 'Electric Field: ' + str(distance_to_lens - remaining_distance_to_lens) + ' / ' + str(distance_to_lens) + " mm from 3.02mm Lens After PIAA Lens #2"
+        utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
+        file_number += 1  
+        
+    # [7] - Pass the electric field through the 3.02mm lens
+    print "[7] - 3.02mm Lens"
+    electric_field = lens.curved_wavefront(electric_field, lens.focal_length_2)    
+    utils.save_plot(np.abs(electric_field)**0.5, "Electric Field: At 3.02mm Lens", directory, ("%05d" % file_number))
+    file_number += 1
+    
+    # [8] - Propagate to the 1mm square lenslet
+    print "[8] - 3.02mm Lens - Square Lenslet"
+    distance_to_lenslet = 1 / ( 1/lens.focal_length_2 - 1/(lens.focal_length_2 + dz) )  #From thin lens formula
+    remaining_distance_to_lenslet = distance_to_lenslet
+    while remaining_distance_to_lenslet > 0:
+        # Propagate the field by the distance step (or the distance remaining if it is smaller than the step)
+        if remaining_distance_to_lenslet > distance_step:
+            electric_field = lens.propagate(electric_field, distance_step)
+            remaining_distance_to_lenslet -= distance_step  
+        else:
+            electric_field = lens.propagate(electric_field, remaining_distance_to_lenslet)
+            remaining_distance_to_lenslet = 0
+        
+        # Save the plot at each step
+        title = 'Electric Field: ' + str(distance_to_lenslet - remaining_distance_to_lenslet) + ' / ' + str(distance_to_lenslet) + " mm from Square Lenslet"
+        utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
+        file_number += 1    
+    
+    # [9] - Multiply by square lenslet, propagate through glass (forget for the moment) and multiply by curved wf
+    print "[9] - Square Lenslet"
+    electric_field = lens.apply_lenslet(electric_field)
+    electric_field = lens.curved_wavefront(electric_field, lens.focal_length_3)   
+    utils.save_plot(np.abs(electric_field)**0.5, "Electric Field: At Square Lenslet", directory, ("%05d" % file_number))
+    file_number += 1
+    
+    # [10] - Propagate to the fibre optic cable
+    print "[10] - Square Lenslet - Optical Fibre"
+    distance_to_fibre = lens.focal_length_3 + alpha
+    remaining_distance_to_fibre = distance_to_fibre
+    while remaining_distance_to_fibre > 0:
+        # Propagate the field by the distance step (or the distance remaining if it is smaller than the step)
+        if remaining_distance_to_fibre > distance_step:
+            electric_field = lens.propagate(electric_field, distance_step)
+            remaining_distance_to_fibre -= distance_step  
+        else:
+            electric_field = lens.propagate(electric_field, remaining_distance_to_fibre)
+            remaining_distance_to_fibre = 0
+        
+        # Save the plot at each step
+        title = 'Electric Field: ' + str(distance_to_fibre - remaining_distance_to_fibre) + ' / ' + str(distance_to_fibre) + " mm from Optical Fibre"
         utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
         file_number += 1
-    
     
     
         
@@ -536,7 +625,7 @@ def propagate_to_fibre(dz, alpha):
     lens.create_piaa()
     
     # [1, 2] - Compute the input electric field (annulus x distorted wavefront from atmosphere) 
-    electric_field = lens.calculate_input_e_field()
+    electric_field = lens.calculate_input_e_field(False)
     
     # [3] - Pass the electric field through the first PIAA lens
     electric_field = lens.apply_piaa_lens(lens.piaa_lens1, electric_field)
@@ -561,6 +650,7 @@ def propagate_to_fibre(dz, alpha):
     
     # [9] - Multiply by square lenslet, propagate through glass (forget for the moment) and multiply by curved wf
     electric_field = lens.apply_lenslet(electric_field)
+    electric_field = interpolate.interp2d(range(lens.npix), range(lens.npix), electric_field)
     electric_field = lens.curved_wavefront(electric_field, lens.focal_length_3)   
     
     # [10] - Propagate to the fibre optic cable
@@ -568,5 +658,6 @@ def propagate_to_fibre(dz, alpha):
     electric_field = lens.propagate(electric_field, distance_to_fibre)     
     
     # [11] - Compute the near field profile and the fibre coupling
+    return lens.compute_coupling(electric_field)
     return electric_field
     
