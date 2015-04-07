@@ -523,7 +523,7 @@ class PIAA_System:
             The coupling between the fibre mode and the electric_field (Max 1)
         """
         # Compute the fibre mode
-        fibre_mode = self.get_fibre_mode
+        fibre_mode = self.get_fibre_mode()
         
         # Compute overlap integral
         num = np.abs(integrate.trapz(integrate.trapz(fibre_mode * np.ma.conjugate(electric_field))))**2
@@ -752,6 +752,6 @@ def propagate_to_fibre(dz, alpha, seeing=1.0, gaussian_alpha=2.0, apply_turbulen
     electric_field = lens.propagate(electric_field, distance_to_fibre)     
     
     # [11] - Compute the near field profile and the fibre coupling
-    print "Coupling: " + str(lens.compute_coupling(electric_field))
+    coupling = lens.compute_coupling(electric_field)
     return coupling, electric_field
     
