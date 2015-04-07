@@ -455,5 +455,22 @@ def mode_2d(V, r, j=0, n=0, sampling=0.3,  sz=1024):
     return the_mode/np.sqrt(np.sum(the_mode**2))
 
 def compute_v_number(wavelength_in_mm, core_radius, numerical_aperture):
+    """Computes the V number (can be interpreted as a kind of normalized optical frequency) for an optical fibre
+    
+    Parameters
+    ----------
+    wavelength_in_mm: float
+        The wavelength of light in mm
+    core_radius: float
+        The core radius of the fibre in mm
+    numerical_aperture: float
+        The numerical aperture of the optical fibre, defined be refractive indices of the core and cladding
+        
+    Returns
+    -------
+    v: float
+        The v number of the fibre
+        
+    """
     v = 2 * np.pi / wavelength_in_mm * core_radius * numerical_aperture
     return v

@@ -344,15 +344,13 @@ class PIAA_System:
         self.real_heights = True                 # ...
         self.dx = 1.0/1000.0                     # Resolution/sampling in mm/pixel
         self.npix = 4096                         # Number of pixels for the simulation
-        self.wavelength_in_mm = 0.5/1000.0       # Wavelength of light in mm
+        self.wavelength_in_mm = 1.0/1000.0       # Wavelength of light in mm
         self.focal_length_1 = 200                # Focal length of wavefront after PIAA lens #2
         self.focal_length_2 = 3.02               # Focal length of 3.02mm lens
         self.focal_length_3 = 4.64               # Focal length of 4.64mm square lenslet
         self.lenslet_width = 1.0                 # Width of the square lenslet in mm
         self.fibre_core_radius = 0.00125         # Width of the optical fibre in mm
-        self.numerical_aperture = 0.13           # Numerical aperture of the optical fibre
-        
-        
+        self.numerical_aperture = 0.13           # Numerical aperture of the optical fibre 
         
     def create_piaa(self):
         """Creates the PIAA lenses using the stored physical parameters
@@ -454,21 +452,86 @@ class PIAA_System:
         efield_after = optics.square(self.npix, self.lenslet_width/self.dx) * efield_before
         
         return efield_after
+    
+    def crop_and_interpolate(self, efield_before, interpolation_factor=2):
+        """Crops the electric field to twice the size of the square lenslet and interpolates by the interpolation factor
         
-    def compute_coupling(self, electric_field):
+        Parameters
+        ----------
+        efield_before: 2D numpy.ndarray
+            The electric field before cropping and interpolation
+       
+       Returns
+        -------
+        efield_after: 2D numpy.ndarray
+            The electric field after cropping and interpolation          
+        """
+        # Determine region to crop and crop the field
+        square_size = int(self.lenslet_width / self.dx)
+        crop_min = int(self.npix / 2 - square_size)
+        crop_max = int(self.npix / 2 + square_size)
+        square_field = efield_before[crop_min:crop_max,crop_min:crop_max]
+        
+        # Split into real and imaginary components (interp2d only deals with scalars)
+        ef_real = square_field.real
+        ef_imag = square_field.imag
+        
+        # Interpolate 
+        interpolated_real = interpolate.interp2d(range(square_size*2), range(square_size*2), ef_real)
+        interpolated_imag = interpolate.interp2d(range(square_size*2), range(square_size*2), ef_imag)
+        
+        new_npix = square_size*2*interpolation_factor
+        
+        new_ef_real = interpolated_real(np.arange(0, new_npix), np.arange(0, new_npix))
+        new_ef_imag = interpolated_imag(np.arange(0, new_npix), np.arange(0, new_npix))
+        
+        # Update the stored values to reflect the interpolation
+        self.dx = self.dx / interpolation_factor
+        self.npix = new_npix
+        
+        # Recombine real and imaginary components and return result
+        efield_after = new_ef_real + 1j * new_ef_imag
+        return efield_after
+    
+    def get_fibre_mode(self):
+        """Computes the mode of the optical fibre.
+        
+        Returns
+        -------
+        fibre_mode: 2D numpy.ndarray
+            The mode of the optical fibre
+        """
         # Calculate the V number for the model
         v = optics.compute_v_number(self.wavelength_in_mm, self.fibre_core_radius, self.numerical_aperture)
         
-        print str(v) + ", " + str(self.radius_in_mm) + ", " + str(self.fibre_core_radius) + ", " + str(self.numerical_aperture)
-        
         # Use the V number to calculate the mode
         fibre_mode = optics.mode_2d(v, self.fibre_core_radius, sampling=self.dx, sz=self.npix)
+        
+        return fibre_mode
+    
+    def compute_coupling(self, electric_field):
+        """Computes the coupling between the electric field and the optical fibre using an overlap integral.
+        
+        Parameters
+        ----------
+        electric_field: 2D numpy.ndarray
+            The electric field entering the optical fibre
+       
+        Returns
+        -------
+        coupling: float
+            The coupling between the fibre mode and the electric_field (Max 1)
+        """
+        # Compute the fibre mode
+        fibre_mode = self.get_fibre_mode
         
         # Compute overlap integral
         num = np.abs(integrate.trapz(integrate.trapz(fibre_mode * np.ma.conjugate(electric_field))))**2
         den = integrate.trapz(integrate.trapz(np.ma.abs(fibre_mode)**2)) * integrate.trapz(integrate.trapz(np.ma.abs(electric_field)**2))
         
-        return num / den
+        coupling = num / den
+        
+        return coupling
         
         
     
@@ -482,13 +545,22 @@ def propagate_and_save(directory, distance_step, dz, alpha, apply_turbulence=Tru
     distance_step: integer
         The distance to propagate the wavefront forward for each plot
         Should be a fraction of the thickness and focal length
+    dz: float   
+        Free parameter, determines the magnification of the lenslet
+    alpha: float
+        Free parameter for propagation from the lenslet to the fibre
+    apply_turbulence: boolean
+        Whether to apply atmospheric turbulence or not
+    Returns
+    -------
+    electric_field: 2D numpy.ndarray
+        The electric field entering the optical fibre
     """
     
     # Create the lens and its annulus and PIAA components
     lens = PIAA_System()
     lens.create_piaa()
     lens.create_annulus()
-    lens.create_piaa()
     
     # The image count to uniquely identify each image created
     file_number = 0
@@ -569,9 +641,10 @@ def propagate_and_save(directory, distance_step, dz, alpha, apply_turbulence=Tru
         utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
         file_number += 1    
     
-    # [9] - Multiply by square lenslet, propagate through glass (forget for the moment) and multiply by curved wf
+    # [9] - Multiply by square lenslet, crop/interpolate and multiply by curved wf
     print "[9] - Square Lenslet"
     electric_field = lens.apply_lenslet(electric_field)
+    electric_field = lens.crop_and_interpolate(electric_field, 2)
     electric_field = lens.curved_wavefront(electric_field, lens.focal_length_3)   
     utils.save_plot(np.abs(electric_field)**0.5, "Electric Field: At Square Lenslet", directory, ("%05d" % file_number))
     file_number += 1
@@ -593,10 +666,13 @@ def propagate_and_save(directory, distance_step, dz, alpha, apply_turbulence=Tru
         title = 'Electric Field: ' + str(distance_to_fibre - remaining_distance_to_fibre) + ' / ' + str(distance_to_fibre) + " mm from Optical Fibre"
         utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
         file_number += 1
-    
+        
+    # [11] - Compute the near field profile and the fibre coupling
+    print "Coupling: " + str(lens.compute_coupling(electric_field))
+    return electric_field    
     
         
-def propagate_to_fibre(dz, alpha):
+def propagate_to_fibre(dz, alpha, seeing=1.0, gaussian_alpha=2.0, apply_turbulence=True):
     """Propagates the wavefront to the fibre, passing through the following stages:
         1 - Apply atmospheric turbulence
         2 - Pass the wavefront through the telescope pupil (with annulus)
@@ -616,16 +692,34 @@ def propagate_to_fibre(dz, alpha):
         Free parameter, determines the magnification of the lenslet
     alpha: float
         Free parameter for propagation from the lenslet to the fibre
+    seeing: float
+        The seeing for the telescope.
+    gaussian_alpha: float
+        Exponent constant from Gaussian    
+    apply_turbulence: boolean
+        Whether to apply atmospheric turbulence or not    
+        
+    Returns
+    -------
+    coupling: float
+        The coupling between the fibre mode and the electric_field (Max 1)
+    electric_field: 2D numpy.ndarray
+        The electric field entering the optical fibre    
     """
     
-    # Create the lens and its annulus and PIAA components
+    # Create the lens object
     lens = PIAA_System()
+    
+    # Initialise seeing and alpha
+    lens.seeing_in_arcsec = seeing
+    lens.alpha = gaussian_alpha
+    
+    # Create the PIAA components and the annulus
     lens.create_piaa()
     lens.create_annulus()
-    lens.create_piaa()
     
     # [1, 2] - Compute the input electric field (annulus x distorted wavefront from atmosphere) 
-    electric_field = lens.calculate_input_e_field(False)
+    electric_field = lens.calculate_input_e_field(apply_turbulence)
     
     # [3] - Pass the electric field through the first PIAA lens
     electric_field = lens.apply_piaa_lens(lens.piaa_lens1, electric_field)
@@ -648,9 +742,9 @@ def propagate_to_fibre(dz, alpha):
     distance_to_lenslet = 1 / ( 1/lens.focal_length_2 - 1/(lens.focal_length_2 + dz) )  #From thin lens formula
     electric_field = lens.propagate(electric_field, distance_to_lenslet)    
     
-    # [9] - Multiply by square lenslet, propagate through glass (forget for the moment) and multiply by curved wf
+    # [9] - Multiply by square lenslet, crop/interpolate and multiply by curved wf
     electric_field = lens.apply_lenslet(electric_field)
-    electric_field = interpolate.interp2d(range(lens.npix), range(lens.npix), electric_field)
+    electric_field = lens.crop_and_interpolate(electric_field, 2)
     electric_field = lens.curved_wavefront(electric_field, lens.focal_length_3)   
     
     # [10] - Propagate to the fibre optic cable
@@ -658,6 +752,6 @@ def propagate_to_fibre(dz, alpha):
     electric_field = lens.propagate(electric_field, distance_to_fibre)     
     
     # [11] - Compute the near field profile and the fibre coupling
-    return lens.compute_coupling(electric_field)
-    return electric_field
+    print "Coupling: " + str(lens.compute_coupling(electric_field))
+    return coupling, electric_field
     
