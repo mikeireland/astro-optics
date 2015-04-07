@@ -474,3 +474,64 @@ def compute_v_number(wavelength_in_mm, core_radius, numerical_aperture):
     """
     v = 2 * np.pi / wavelength_in_mm * core_radius * numerical_aperture
     return v
+    
+def shift_and_ft(im):
+    """Sub-pixel shift an image to the origin and Fourier-transform it
+
+    Parameters
+    ----------
+    im: (ny,nx) float array
+    ftpix: optional ( (nphi) array, (nphi) array) of Fourier sampling points. 
+    If included, the mean square Fourier phase will be minimised.
+
+    Returns
+    ----------
+    ftim: (ny,nx/2+1)  complex array
+    """
+    ny = im.shape[0]
+    nx = im.shape[1]
+    im = regrid_fft(im,(3*ny,3*nx))
+    shifts = np.unravel_index(im.argmax(), im.shape)
+    im = np.roll(np.roll(im,-shifts[0]+1,axis=0),-shifts[1]+1,axis=1)
+    im = rebin(im,(ny,nx))
+    ftim = np.fft.rfft2(im)
+    return ftim
+
+def rebin(a, shape):
+    """Re-bins an image to a new (smaller) image with summing	
+
+    Originally from:
+    http://stackoverflow.com/questions/8090229/resize-with-averaging-or-rebin-a-numpy-2d-array
+
+    Parameters
+    ----------
+    a: array
+        Input image
+    shape: (xshape,yshape)
+        New shape
+    """
+    sh = shape[0],a.shape[0]//shape[0],shape[1],a.shape[1]//shape[1]
+    return a.reshape(sh).sum(-1).sum(1)
+
+def regrid_fft(im,new_shape):
+    """Regrid onto a larger number of pixels using an fft. This is optimal
+    for Nyquist sampled data.
+
+    Parameters
+    ----------
+    im: array
+        The input image.
+    new_shape: (new_y,new_x)
+        The new shape
+
+    Notes
+    ------
+    TODO: This should work with an arbitrary number of dimensions
+    """
+    ftim = np.fft.rfft2(im)
+    new_ftim = np.zeros((new_shape[0], new_shape[1]/2 + 1),dtype='complex')
+    new_ftim[0:ftim.shape[0]/2,0:ftim.shape[1]] = \
+        ftim[0:ftim.shape[0]/2,0:ftim.shape[1]]
+    new_ftim[new_shape[0]-ftim.shape[0]/2:,0:ftim.shape[1]] = \
+        ftim[ftim.shape[0]/2:,0:ftim.shape[1]]
+    return np.fft.irfft2(new_ftim)
