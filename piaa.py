@@ -503,8 +503,9 @@ class PIAA_System:
         # Update the stored values to reflect the interpolation
         self.dx = self.dx / 2.0
         
-        # Recombine real and imaginary components and return result, dividing by four to keep the intensity constant
-        efield_after = (new_ef_real + 1j * new_ef_imag) / 4.0
+        # Recombine real and imaginary components and return result. Multiply by 2
+        # because of the way that regrid_fft rescales.
+        efield_after = (new_ef_real + 1j * new_ef_imag) * 2.0
         
         return efield_after
     
@@ -788,7 +789,7 @@ def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_turbulence=True
     coupling = lens.compute_coupling(electric_field[12])
     loss_at_lenslet = np.sum(np.abs(electric_field[9])**2) / np.sum(np.abs(electric_field[8])**2)
     aperture_loss = np.sum(np.abs(electric_field[12])**2) / np.sum(np.abs(electric_field[0])**2)
-    
+
     return coupling, loss_at_lenslet, aperture_loss, electric_field
     
     #print("Loss at lenslet: {0:5.2f}".format(np.sum(np.abs(electric_field[9])**2)/np.sum(np.abs(electric_field[8])**2)))
