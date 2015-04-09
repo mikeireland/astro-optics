@@ -17,6 +17,7 @@ from scipy import interpolate
 import matplotlib.pyplot as plt
 import utils
 import math
+import csv
 
 def ds_annulus_gauss(r, s, alpha, r0):
     """An annulus morphing into a (truncated) Gaussian. Only
@@ -355,6 +356,7 @@ class PIAA_System:
         # !!! Testing !!!
         self.fibre_core_radius = 0.0015          # Width of the optical fibre in mm
         self.numerical_aperture = 0.11           # Numerical aperture of the optical fibre 
+        self.mode = None
        
     def create_piaa(self):
         """Creates the PIAA lenses using the stored physical parameters
@@ -517,13 +519,19 @@ class PIAA_System:
         fibre_mode: 2D numpy.ndarray
             The mode of the optical fibre
         """
-        # Calculate the V number for the model
-        v = optics.compute_v_number(self.wavelength_in_mm, self.fibre_core_radius, self.numerical_aperture)
+        if self.mode is None:
         
-        # Use the V number to calculate the mode
-        fibre_mode = optics.mode_2d(v, self.fibre_core_radius, sampling=self.dx, sz=self.npix)
+            # Calculate the V number for the model
+            v = optics.compute_v_number(self.wavelength_in_mm, self.fibre_core_radius, self.numerical_aperture)
+            
+            # Use the V number to calculate the mode
+            fibre_mode = optics.mode_2d(v, self.fibre_core_radius, sampling=self.dx, sz=self.npix)
         
-        return fibre_mode
+            self.mode = fibre_mode
+            return fibre_mode
+        
+        else:
+            return self.mode
     
     def compute_coupling(self, electric_field):
         """Computes the coupling between the electric field and the optical fibre using an overlap integral.
@@ -697,7 +705,7 @@ def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=
     return coupling, electric_field    
     
         
-def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_turbulence=True):
+def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_turbulence=True, mode=None):
     """Propagates the wavefront to the fibre, passing through the following stages:
         1 - Apply atmospheric turbulence
         2 - Pass the wavefront through the telescope pupil (with annulus)
@@ -743,6 +751,7 @@ def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_turbulence=True
     # Initialise seeing and alpha
     lens.seeing_in_arcsec = seeing
     lens.alpha = gaussian_alpha
+    lens.mode = mode
     
     # Create the PIAA components and the annulus
     lens.create_piaa()
@@ -793,3 +802,47 @@ def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_turbulence=True
     return coupling, loss_at_lenslet, aperture_loss, electric_field
     
     #print("Loss at lenslet: {0:5.2f}".format(np.sum(np.abs(electric_field[9])**2)/np.sum(np.abs(electric_field[8])**2)))
+    
+def simulate(results_save_path, iterations=100, dz_values=[0.6,0.7,0.8,0.9], alpha_values=[1.0,2.0,3.0], seeing_values=[0.0,1.0,2.0,3.0]):
+    """
+    """
+    
+    # Initialise list to store results
+    simulation_results = [['eta','dz','alpha','seeing']]
+    
+    # Get mode
+    lens = PIAA_System()
+    mode = lens.get_fibre_mode()
+    #count = 0
+    # For each set of dz-alpha-seeing, run for the given number of iterations
+    for dz in dz_values:
+        for alpha in alpha_values:
+            for seeing in seeing_values:
+                # Initialise eta to 0
+                eta = 0
+                
+                for i in xrange(0,iterations):    
+                    # Propagate to the fibre with the given parameters
+                    coupling, loss_at_lenslet, aperture_loss, electric_field = propagate_to_fibre(dz, seeing, alpha, True, mode)
+                    
+                    eta += coupling * aperture_loss
+                    #print count
+                    #count += 1
+                    
+                # eta computed 'iterations' times for dz-alpha-seeing set, average and store result
+                eta_avg = eta / iterations
+                result = [eta_avg, dz, alpha, seeing]
+                simulation_results.append(result)
+    
+    try:
+        # All results obtained, save as file
+        with open(results_save_path, "wb") as f:
+            writer = csv.writer(f)
+            writer.writerows(simulation_results)
+    except:
+        print "Error when writing to .csv"
+    else:
+        return simulation_results
+        
+    return simulation_results    
+    
