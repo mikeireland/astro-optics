@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import utils
 import math
 import csv
+import pylab as pl
 
 def ds_annulus_gauss(r, s, alpha, r0):
     """An annulus morphing into a (truncated) Gaussian. Only
@@ -244,22 +245,27 @@ def generate_atmosphere(npix, wavelength, pixel_size, seeing):
     
     """
     
-    #!!! MJI This formula was wrong - you used arcsec not radians
-    seeing_in_radians = np.radians(seeing/3600.)
-    # Generate the Kolmogorov turbulence
-    turbulence = optics.kmf(npix)
+    if seeing > 0.0:
     
-    # Calculate r0 (Fried's parameter), which is a measure of the strength of seeing distortions
-    #!!! MJI This formula was wrong
-    r0 = 0.98 * wavelength / seeing_in_radians 
-    
-    # Apply the atmosphere and scale
-    wf_in_radians = turbulence * np.sqrt(6.88*(pixel_size/r0)**(5.0/3.0))
+        #!!! MJI This formula was wrong - you used arcsec not radians
+        seeing_in_radians = np.radians(seeing/3600.)
+        # Generate the Kolmogorov turbulence
+        turbulence = optics.kmf(npix)
         
-    # Convert the wavefront to an electric field
-    electric_field = np.exp(1j * wf_in_radians)
+        # Calculate r0 (Fried's parameter), which is a measure of the strength of seeing distortions
+        #!!! MJI This formula was wrong
+        r0 = 0.98 * wavelength / seeing_in_radians 
+        
+        # Apply the atmosphere and scale
+        wf_in_radians = turbulence * np.sqrt(6.88*(pixel_size/r0)**(5.0/3.0))
+            
+        # Convert the wavefront to an electric field
+        electric_field = np.exp(1j * wf_in_radians)
+        
+        return wf_in_radians # electric_field
     
-    return wf_in_radians # electric_field
+    else:
+        return 0.0
     
 def create_piaa_lenses(alpha, r0, frac_to_focus, delta, dt, n_med, thickness, radius_in_mm, real_heights, dx, npix, wavelength_in_mm):
     """Constructs a pair of PIAA lenses given the relevant parameters.
@@ -368,21 +374,17 @@ class PIAA_System:
         """ 
         self.annulus = (optics.circle(self.npix,(self.radius_in_mm * 2)/self.dx) - optics.circle(self.npix, (self.radius_in_mm * 2 * self.r0)/self.dx))
         
-    def calculate_input_e_field(self, apply_turbulence=True):
+    def calculate_input_e_field(self):
         """Compute the input electric field using the annulus and Kolmogorov turbulence
         
         Returns
         -------
         efield_in: 2D numpy.ndarray
             The electric field.
-        apply_turbulence: boolean
-            Whether to apply atmospheric turbulence or not
         """
-        if apply_turbulence:
-            self.efield_in = self.annulus * np.exp(1j * generate_atmosphere(self.npix, self.wavelength_in_mm, self.dx, self.seeing_in_arcsec * self.telescope_magnification))
-        else:
-            self.efield_in = self.annulus
-            
+
+        self.efield_in = self.annulus * np.exp(1j * generate_atmosphere(self.npix, self.wavelength_in_mm, self.dx, self.seeing_in_arcsec * self.telescope_magnification))
+ 
         return self.efield_in
         
     def apply_piaa_lens(self, piaa_lens, efield_before):
@@ -705,7 +707,7 @@ def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=
     return coupling, electric_field    
     
         
-def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_turbulence=True, mode=None):
+def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_piaa=True, mode=None):
     """Propagates the wavefront to the fibre, passing through the following stages:
         1 - Apply atmospheric turbulence
         2 - Pass the wavefront through the telescope pupil (with annulus)
@@ -730,8 +732,8 @@ def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_turbulence=True
         The seeing for the telescope.
     gaussian_alpha: float
         Exponent constant from Gaussian    
-    apply_turbulence: boolean
-        Whether to apply atmospheric turbulence or not    
+    apply_piaa: boolean
+        Whether to apply the PIAA lenses or not    
         
     Returns
     -------
@@ -760,78 +762,96 @@ def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_turbulence=True
     # Initialise list to store electric fields from each step
     electric_field= []
     
-    # [1, 2] - Compute the input electric field (annulus x distorted wavefront from atmosphere) 
-    electric_field.append(lens.calculate_input_e_field(apply_turbulence))
+    # [1, 2] - Compute the input electric field (annulus x distorted wavefront from atmosphere)                     #[Index in electric_field]
+    electric_field.append(lens.calculate_input_e_field())                                                           #0  
     
-    # [3] - Pass the electric field through the first PIAA lens
-    electric_field.append(lens.apply_piaa_lens(lens.piaa_lens1, electric_field[0]))
-    
-    # [4] - Propagate the electric field through glass to the second lens
-    electric_field.append(lens.propagate(electric_field[1], lens.thickness / lens.n_med))
-    
-    # [5] - Pass the electric field through the second PIAA lens
-    electric_field.append(lens.apply_piaa_lens(lens.piaa_lens2, electric_field[2]))
-    electric_field.append(lens.curved_wavefront(electric_field[3], lens.focal_length_1))   
+    if apply_piaa:
+        # [3] - Pass the electric field through the first PIAA lens
+        electric_field.append(lens.apply_piaa_lens(lens.piaa_lens1, electric_field[-1]))                            #1
+        
+        # [4] - Propagate the electric field through glass to the second lens
+        electric_field.append(lens.propagate(electric_field[-1], lens.thickness / lens.n_med))                      #2
+        
+        # [5] - Pass the electric field through the second PIAA lens
+        electric_field.append(lens.apply_piaa_lens(lens.piaa_lens2, electric_field[-1]))                            #3
+        
+    electric_field.append(lens.curved_wavefront(electric_field[-1], lens.focal_length_1))                           #4  /   1
     
     # [6] - Propagate the electric field to the 3.02mm lens
     distance_to_lens = lens.focal_length_1 + lens.focal_length_2 + dz
-    electric_field.append(lens.propagate(electric_field[4], distance_to_lens))
+    electric_field.append(lens.propagate(electric_field[-1], distance_to_lens))                                     #5  /   2
     
     # [7] - Pass the electric field through the 3.02mm lens and circular mask
-    electric_field.append(lens.apply_circular_lens(electric_field[5]))
-    electric_field.append(lens.curved_wavefront(electric_field[6], lens.focal_length_2))    
+    electric_field.append(lens.apply_circular_lens(electric_field[-1]))                                             #6  /   3
+    electric_field.append(lens.curved_wavefront(electric_field[-1], lens.focal_length_2))                           #7  /   4
     
     # [8] - Propagate to the 1mm square lenslet
     distance_to_lenslet = 1 / ( 1/lens.focal_length_2 - 1/(lens.focal_length_2 + dz) )  #From thin lens formula
-    electric_field.append(lens.propagate(electric_field[7], distance_to_lenslet))    
+    electric_field.append(lens.propagate(electric_field[-1], distance_to_lenslet))                                  #8  /   5
     
     # [9] - Multiply by square lenslet, crop/interpolate and multiply by curved wf
-    electric_field.append(lens.apply_lenslet(electric_field[8]))
-    electric_field.append(lens.crop_and_interpolate(electric_field[9]))
-    electric_field.append(lens.curved_wavefront(electric_field[10], lens.focal_length_3))   
+    electric_field.append(lens.apply_lenslet(electric_field[-1]))                                                   #9  /   6
+    electric_field.append(lens.crop_and_interpolate(electric_field[-1]))                                            #10 /   7
+    electric_field.append(lens.curved_wavefront(electric_field[-1], lens.focal_length_3))                           #11 /   8
     
     # [10] - Propagate to the fibre optic cable
     distance_to_fibre = 1.0/(1.0/lens.focal_length_3 - 1.0/(distance_to_lenslet - lens.focal_length_2))
-    electric_field.append(lens.propagate(electric_field[11], distance_to_fibre))     
+    electric_field.append(lens.propagate(electric_field[-1], distance_to_fibre))                                    #12 /   9
     
     # [11] - Compute fibre coupling and losses throughout the system
-    coupling = lens.compute_coupling(electric_field[12])
-    loss_at_lenslet = np.sum(np.abs(electric_field[9])**2) / np.sum(np.abs(electric_field[8])**2)
-    aperture_loss = np.sum(np.abs(electric_field[12])**2) / np.sum(np.abs(electric_field[0])**2)
+    coupling = lens.compute_coupling(electric_field[-1])                                                            
+    loss_at_lenslet = np.sum(np.abs(electric_field[-4])**2) / np.sum(np.abs(electric_field[-5])**2)
+    aperture_loss = np.sum(np.abs(electric_field[-1])**2) / np.sum(np.abs(electric_field[0])**2)
 
     return coupling, loss_at_lenslet, aperture_loss, electric_field
     
     #print("Loss at lenslet: {0:5.2f}".format(np.sum(np.abs(electric_field[9])**2)/np.sum(np.abs(electric_field[8])**2)))
     
-def simulate(results_save_path, iterations=100, dz_values=[0.6,0.7,0.8,0.9], alpha_values=[1.0,2.0,3.0], seeing_values=[0.0,1.0,2.0,3.0]):
+def simulate(results_save_path, iterations=100, dz_values=[0.6,0.7,0.8,0.9], seeing_values=[0.0,1.0,2.0,3.0], alpha_values=[1.0,2.0,3.0]):
     """
+    Parameters
+    ----------
+    results_save_path: string  
+        The path to save the .csv to.
+    iterations: int
+        The number of times to run each simulation in order to average out the effects of turbulence
+    dz_values: [float]
+        The list of dz values to simulate.
+    seeing_values: [float]
+        The list of seeing values to simulate.
+    alpha_values: [float]
+        The list of alpha values to simulate.    
+
+    Returns
+    -------
+    simulation_results: 2D list
+        The result and parameters for each simulation: [eta, dz, seeing, alpha]
     """
     
     # Initialise list to store results
-    simulation_results = [['eta','dz','alpha','seeing']]
+    simulation_results = [['eta','dz','seeing','alpha']]
     
     # Get mode
-    lens = PIAA_System()
-    mode = lens.get_fibre_mode()
-    #count = 0
+    #lens = PIAA_System()
+    #lens.dx = 1.0
+    #mode = lens.get_fibre_mode()
+
     # For each set of dz-alpha-seeing, run for the given number of iterations
     for dz in dz_values:
-        for alpha in alpha_values:
-            for seeing in seeing_values:
+        for seeing in seeing_values:
+            for alpha in alpha_values:
                 # Initialise eta to 0
                 eta = 0
                 
                 for i in xrange(0,iterations):    
                     # Propagate to the fibre with the given parameters
-                    coupling, loss_at_lenslet, aperture_loss, electric_field = propagate_to_fibre(dz, seeing, alpha, True, mode)
+                    coupling, loss_at_lenslet, aperture_loss, electric_field = propagate_to_fibre(dz, seeing, alpha, True)
                     
                     eta += coupling * aperture_loss
-                    #print count
-                    #count += 1
                     
                 # eta computed 'iterations' times for dz-alpha-seeing set, average and store result
                 eta_avg = eta / iterations
-                result = [eta_avg, dz, alpha, seeing]
+                result = [eta_avg, dz, seeing, alpha]
                 simulation_results.append(result)
     
     try:
@@ -845,4 +865,46 @@ def simulate(results_save_path, iterations=100, dz_values=[0.6,0.7,0.8,0.9], alp
         return simulation_results
         
     return simulation_results    
+
+def construct_simulation_plots(save_path, results, dz_values=[0.6,0.7,0.8,0.9], seeing_values=[0.0,1.0,2.0,3.0], alpha_values=[1.0,2.0,3.0]):
+    """Constructs and saves plots of the output of piaa.simulate()
+    Each plot is of dz (independent) vs eta (dependent) for a given seeing value, with lines of varying alpha being plotted
     
+    Parameters
+    ----------
+    save_path: string  
+        The path to save the plots to, ending with //
+    results: 2D list
+        The result and parameters for each simulation: [eta, dz, seeing, alpha]
+    dz_values: [float]
+        The list of dz values to simulate.
+    seeing_values: [float]
+        The list of seeing values to simulate.
+    alpha_values: [float]
+        The list of alpha values to simulate.    
+    """
+    # Make sure the results array is in the correct format
+    results = np.array(results)
+    
+    # Construct a graph for each seeing value, a line for each alpha value and a point for each eta-dz pair
+    for seeing in seeing_values:
+        pl.clf()
+        for alpha in alpha_values:
+            dz = []
+            eta = []
+            
+            # Find the entries in results that match the given seeing and alpha values
+            for simulation in xrange(0, len(results)):
+                if (results[simulation, 2] == seeing) and (results[simulation, 3] == alpha):
+                    dz.append(results[simulation, 1])
+                    eta.append(results[simulation, 0])
+                    
+            # All matching simulations found, plot line
+            pl.plot(dz,eta, label=("alpha = " + str(alpha)))
+            
+        # All alphas plotted, apply labels/legend and save    
+        pl.title(("Seeing = " + str(seeing)))
+        pl.xlabel("dz (mm)")
+        pl.ylabel("eta")
+        pl.legend(prop={'size':6})
+        pl.savefig( (save_path + "Simulation Plot, Seeing = " + str(seeing) + ".jpg" ))
