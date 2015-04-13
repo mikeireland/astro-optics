@@ -527,7 +527,7 @@ class PIAA_System:
             v = optics.compute_v_number(self.wavelength_in_mm, self.fibre_core_radius, self.numerical_aperture)
             
             # Use the V number to calculate the mode
-            fibre_mode = optics.mode_2d(v, self.fibre_core_radius, sampling=self.dx, sz=self.npix)
+            fibre_mode = optics.mode_2d(v, self.fibre_core_radius, sampling=self.dx, sz=self.npix / 4)
         
             self.mode = fibre_mode
             return fibre_mode
@@ -548,6 +548,11 @@ class PIAA_System:
         coupling: float
             The coupling between the fibre mode and the electric_field (Max 1)
         """
+        # Crop the electric field
+        low = self.npix * 3 / 8
+        upper = self.npix * 5 / 8
+        electric_field = electric_field[low:upper,low:upper]
+        
         # Compute the fibre mode
         fibre_mode = self.get_fibre_mode()
         
@@ -899,7 +904,7 @@ def construct_simulation_plots(save_path, results, dz_values=[0.6,0.7,0.8,0.9], 
         The list of alpha values to simulate.    
     """
     # Make sure the results array is in the correct format
-    results = np.array(results)
+    results = np.array(results[1:][:])
     
     # Construct a graph for each seeing value, a line for each alpha value and a point for each eta-dz pair
     for seeing in seeing_values:
@@ -913,7 +918,6 @@ def construct_simulation_plots(save_path, results, dz_values=[0.6,0.7,0.8,0.9], 
                 if (results[simulation, 2] == seeing) and (results[simulation, 3] == alpha):
                     dz.append(results[simulation, 1])
                     eta.append(results[simulation, 0])
-                    
             # All matching simulations found, plot line
             pl.plot(dz,eta, label=("alpha = " + str(alpha)))
             
