@@ -457,7 +457,16 @@ class PIAA_System:
         efield_after: 2D numpy.ndarray
             The electric field after the lenslet
         """            
-        efield_after = optics.square(self.npix, self.lenslet_width/self.dx) * efield_before
+        #efield_after = optics.square(self.npix, self.lenslet_width/self.dx) * efield_before
+        
+        efield_after = np.zeros((self.npix, self.npix))
+        
+        square = optics.square(self.npix, self.lenslet_width/self.dx) + 0j
+        
+        for x in xrange(-1,2):
+            for y in xrange(-1,2):
+                shifted_square = np.roll(np.roll(self.curved_wavefront(square, self.focal_length_3), int(self.lenslet_width/self.dx*y), axis=1), int(self.lenslet_width/self.dx*x), axis=0)
+                efield_after = efield_after + shifted_square * efield_before
         
         return efield_after
         
@@ -492,13 +501,15 @@ class PIAA_System:
             The electric field after cropping and interpolation          
         """
         # Crop the centre half of the field
-        crop_min = int(self.npix / 4)
-        crop_max = int(self.npix * 3 / 4)
-        square_field = efield_before[crop_min:crop_max,crop_min:crop_max]
+        #crop_min = int(self.npix / 4)
+        #crop_max = int(self.npix * 3 / 4)
+        #square_field = efield_before[crop_min:crop_max,crop_min:crop_max]
         
         # Split into real and imaginary components
-        ef_real = square_field.real
-        ef_imag = square_field.imag
+        ef_real = efield_before.real
+        ef_imag = efield_before.imag
+        
+        self.npix = self.npix * 2
         
         # Regrid the real and imaginary components separately, expanding the crop back to the original field size (doubling)
         new_ef_real = optics.regrid_fft(ef_real, [self.npix, self.npix])
@@ -566,7 +577,7 @@ class PIAA_System:
         
         
     
-def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=2.0, apply_turbulence=True):
+def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=2.0):
     """Creates and saves plots for the PIAA system in increments of the specified distance step.
     
     Parameters
@@ -581,9 +592,7 @@ def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=
     seeing: float
         The seeing for the telescope.        
     gaussian_alpha: float
-        Exponent constant from Gaussian   
-    apply_turbulence: boolean
-        Whether to apply atmospheric turbulence or not
+        Exponent constant from Gaussian
     Returns
     -------
     electric_field: 2D numpy.ndarray
@@ -606,7 +615,7 @@ def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=
     
     # [1, 2] - Compute the input electric field (annulus x distorted wavefront from atmosphere) 
     print "[1, 2] - Compute Input"
-    electric_field = lens.calculate_input_e_field(apply_turbulence)
+    electric_field = lens.calculate_input_e_field()
     utils.save_plot(np.abs(electric_field)**0.5, 'Electric Field: Input', directory, ("%05d" % file_number))
     file_number += 1
     
@@ -658,7 +667,7 @@ def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=
         
     # [7] - Pass the electric field through the 3.02mm lens
     print "[7] - 3.02mm Lens"
-    electric_field = lens.apply_circular_lens(electric_field)
+    electric_field = lens.apply_circular_lens(electric_field, lens.circular_lens_diameter)
     electric_field = lens.curved_wavefront(electric_field, lens.focal_length_2)    
     utils.save_plot(np.abs(electric_field)**0.5, "Electric Field: At 3.02mm Lens", directory, ("%05d" % file_number))
     file_number += 1
@@ -685,7 +694,7 @@ def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=
     print "[9] - Square Lenslet"
     electric_field = lens.apply_lenslet(electric_field)
     electric_field = lens.crop_and_interpolate(electric_field)
-    electric_field = lens.curved_wavefront(electric_field, lens.focal_length_3)   
+    #electric_field = lens.curved_wavefront(electric_field, lens.focal_length_3)   
     utils.save_plot(np.abs(electric_field)**0.5, "Electric Field: At Square Lenslet", directory, ("%05d" % file_number))
     file_number += 1
     
@@ -798,6 +807,7 @@ def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_piaa=True, mode
     
     # [8] - Propagate to the 1mm square lenslet
     distance_to_lenslet = 1 / ( 1/lens.focal_length_2 - 1/(lens.focal_length_2 + dz) )  #From thin lens formula
+    print "Distance to Lenslet: " + str(distance_to_lenslet)
     
     if not shift:
         electric_field.append(lens.propagate(electric_field[-1], distance_to_lenslet))                                  #8  /   5
@@ -809,12 +819,13 @@ def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_piaa=True, mode
         electric_field.append(lens.apply_lenslet(electric_field[-1]))                                               #9  /   6
     else:
         electric_field.append(lens.apply_circular_lens(electric_field[-1], lens.lenslet_width))
-        
+  
     electric_field.append(lens.crop_and_interpolate(electric_field[-1]))                                            #10 /   7        
-    electric_field.append(lens.curved_wavefront(electric_field[-1], lens.focal_length_3))                           #11 /   8
+    #electric_field.append(lens.curved_wavefront(electric_field[-1], lens.focal_length_3))                           #11 /   8
     
     # [10] - Propagate to the fibre optic cable
     distance_to_fibre = 1.0/(1.0/lens.focal_length_3 - 1.0/(distance_to_lenslet - lens.focal_length_2))
+    print "Distance to Fibre: " + str(distance_to_fibre)
     electric_field.append(lens.propagate(electric_field[-1], distance_to_fibre))                                    #12 /   9
     
     # [11] - Compute fibre coupling and losses throughout the system
