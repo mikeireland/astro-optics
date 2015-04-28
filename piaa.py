@@ -351,17 +351,14 @@ class PIAA_System:
         self.real_heights = True                 # ...
         self.dx = 2.0/1000.0                     # Resolution/sampling in mm/pixel
         self.npix = 2048                         # Number of pixels for the simulation
-        self.wavelength_in_mm = 1.0/1000.0       # Wavelength of light in mm
-        self.focal_length_1 = 200                # Focal length of wavefront after PIAA lens #2
+        self.wavelength_in_mm = 0.52/1000.0      # Wavelength of light in mm
+        self.focal_length_1 = 94                 # Focal length of wavefront after PIAA lens #2
         self.focal_length_2 = 3.02               # Focal length of 3.02mm lens
         self.focal_length_3 = 4.64               # Focal length of 4.64mm square lenslet
         self.circular_lens_diameter = 2.0        # Diameter of the 3.02mm circular lens
         self.lenslet_width = 1.0                 # Width of the square lenslet in mm
         self.fibre_core_radius = 0.00125         # Width of the optical fibre in mm
         self.numerical_aperture = 0.13           # Numerical aperture of the optical fibre 
-        # !!! Testing !!!
-        #self.fibre_core_radius = 0.0015          # Width of the optical fibre in mm
-        #self.numerical_aperture = 0.11           # Numerical aperture of the optical fibre 
         self.mode = None
        
     def create_piaa(self):
@@ -445,7 +442,7 @@ class PIAA_System:
         return efield_after
         
     def apply_lenslet(self, efield_before):
-        """Propagate the electric field through a square lenslet (mask)
+        """Propagate the electric field through a 3 x 3 square lenslet array
         
         Parameters
         ----------
@@ -459,13 +456,22 @@ class PIAA_System:
         """            
         #efield_after = optics.square(self.npix, self.lenslet_width/self.dx) * efield_before
         
+        # Initialise the resultant electric field (that will be the addition of each of the 9 micro-lenslets)
         efield_after = np.zeros((self.npix, self.npix))
         
+        # Create the square window that will shifted around to represent the light getting into each micro-lenslet
         square = optics.square(self.npix, self.lenslet_width/self.dx) + 0j
         
+        # Starting in the top left, track the window over each row
         for x in xrange(-1,2):
             for y in xrange(-1,2):
-                shifted_square = np.roll(np.roll(self.curved_wavefront(square, self.focal_length_3), int(self.lenslet_width/self.dx*y), axis=1), int(self.lenslet_width/self.dx*x), axis=0)
+                # Calculate the base shift (the actual shift requires the -1, 0 or 1 multiplier to get direction) 
+                shift = int(self.lenslet_width/self.dx)
+                
+                # Have the window be a curved wavefront and shift as required
+                shifted_square = np.roll(np.roll(self.curved_wavefront(square, self.focal_length_3), shift*y, axis=1), shift*x, axis=0)
+                
+                # Add the resulting wavefront to a field containing the wavefronts of all 9 lenses
                 efield_after = efield_after + shifted_square * efield_before
         
         return efield_after
@@ -637,7 +643,7 @@ def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=
             remaining_distance_to_piaa_2 = 0
         
         # Save the plot at each step
-        title = 'Electric Field: ' + str(distance_to_piaa_2 - remaining_distance_to_piaa_2) + ' / ' + str(distance_to_piaa_2) + " mm from PIAA Lens #2"
+        title = 'Electric Field: ' + str(distance_to_piaa_2 - remaining_distance_to_piaa_2) + ' of ' + str(distance_to_piaa_2) + " mm from PIAA Lens #2"
         utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
         file_number += 1 
        
@@ -661,7 +667,7 @@ def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=
             remaining_distance_to_lens = 0
         
         # Save the plot at each step
-        title = 'Electric Field: ' + str(distance_to_lens - remaining_distance_to_lens) + ' / ' + str(distance_to_lens) + " mm from 3.02mm Lens After PIAA Lens #2"
+        title = 'Electric Field: ' + str(distance_to_lens - remaining_distance_to_lens) + ' of ' + str(distance_to_lens) + " mm from 3.02mm Lens After PIAA Lens #2"
         utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
         file_number += 1  
         
@@ -686,7 +692,7 @@ def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=
             remaining_distance_to_lenslet = 0
         
         # Save the plot at each step
-        title = 'Electric Field: ' + str(distance_to_lenslet - remaining_distance_to_lenslet) + ' / ' + str(distance_to_lenslet) + " mm from Square Lenslet"
+        title = 'Electric Field: ' + str(distance_to_lenslet - remaining_distance_to_lenslet) + ' of ' + str(distance_to_lenslet) + " mm from Square Lenslet"
         utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
         file_number += 1    
     
@@ -712,7 +718,7 @@ def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=
             remaining_distance_to_fibre = 0
         
         # Save the plot at each step
-        title = 'Electric Field: ' + str(distance_to_fibre - remaining_distance_to_fibre) + ' / ' + str(distance_to_fibre) + " mm from Optical Fibre"
+        title = 'Electric Field: ' + str(distance_to_fibre - remaining_distance_to_fibre) + ' of ' + str(distance_to_fibre) + " mm from Optical Fibre"
         utils.save_plot(np.abs(electric_field)**0.5, title, directory, ("%05d" % file_number))
         file_number += 1
         
@@ -721,7 +727,7 @@ def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=
     return coupling, electric_field    
     
         
-def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_piaa=True, mode=None, numerical_aperture=0.13, core_radius=0.00125, use_circular_lenslet=False, shift=False):
+def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_piaa=True, apply_lenslet=True, numerical_aperture=0.13, core_radius=0.00125, use_circular_lenslet=False):
     """Propagates the wavefront to the fibre, passing through the following stages:
         1 - Apply atmospheric turbulence
         2 - Pass the wavefront through the telescope pupil (with annulus)
@@ -767,7 +773,6 @@ def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_piaa=True, mode
     # Initialise seeing and alpha
     lens.seeing_in_arcsec = seeing
     lens.alpha = gaussian_alpha
-    lens.mode = mode
     lens.numerical_aperture = numerical_aperture
     lens.fibre_core_radius = core_radius
     
@@ -808,25 +813,22 @@ def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_piaa=True, mode
     # [8] - Propagate to the 1mm square lenslet
     distance_to_lenslet = 1 / ( 1/lens.focal_length_2 - 1/(lens.focal_length_2 + dz) )  #From thin lens formula
     print "Distance to Lenslet: " + str(distance_to_lenslet)
-    
-    if not shift:
-        electric_field.append(lens.propagate(electric_field[-1], distance_to_lenslet))                                  #8  /   5
-    else:
-        electric_field.append(np.roll(lens.propagate(electric_field[-1], distance_to_lenslet), int(lens.lenslet_width / lens.dx), axis=0)) 
-    
+    electric_field.append(lens.propagate(electric_field[-1], distance_to_lenslet))                                  #8  /   5
+
     # [9] - Multiply by square lenslet, crop/interpolate and multiply by curved wf
-    if not use_circular_lenslet:
-        electric_field.append(lens.apply_lenslet(electric_field[-1]))                                               #9  /   6
-    else:
-        electric_field.append(lens.apply_circular_lens(electric_field[-1], lens.lenslet_width))
-  
-    electric_field.append(lens.crop_and_interpolate(electric_field[-1]))                                            #10 /   7        
-    #electric_field.append(lens.curved_wavefront(electric_field[-1], lens.focal_length_3))                           #11 /   8
-    
-    # [10] - Propagate to the fibre optic cable
-    distance_to_fibre = 1.0/(1.0/lens.focal_length_3 - 1.0/(distance_to_lenslet - lens.focal_length_2))
-    print "Distance to Fibre: " + str(distance_to_fibre)
-    electric_field.append(lens.propagate(electric_field[-1], distance_to_fibre))                                    #12 /   9
+    if apply_lenslet:
+        if not use_circular_lenslet:
+            electric_field.append(lens.apply_lenslet(electric_field[-1]))                                               #9  /   6
+        else:
+            electric_field.append(lens.apply_circular_lens(electric_field[-1], lens.lenslet_width))
+      
+        electric_field.append(lens.crop_and_interpolate(electric_field[-1]))                                            #10 /   7        
+        #electric_field.append(lens.curved_wavefront(electric_field[-1], lens.focal_length_3))                          #11 /   8
+        
+        # [10] - Propagate to the fibre optic cable
+        distance_to_fibre = 1.0/(1.0/lens.focal_length_3 - 1.0/(distance_to_lenslet - lens.focal_length_2))
+        print "Distance to Fibre: " + str(distance_to_fibre)
+        electric_field.append(lens.propagate(electric_field[-1], distance_to_fibre))                                    #12 /   9
     
     # [11] - Compute fibre coupling and losses throughout the system
     coupling = lens.compute_coupling(electric_field[-1])                                                            
@@ -837,7 +839,7 @@ def propagate_to_fibre(dz, seeing=1.0, gaussian_alpha=2.0, apply_piaa=True, mode
     
     #print("Loss at lenslet: {0:5.2f}".format(np.sum(np.abs(electric_field[9])**2)/np.sum(np.abs(electric_field[8])**2)))
     
-def simulate(results_save_path, iterations=100, dz_values=[0.6,0.7,0.8,0.9], seeing_values=[0.0,1.0,2.0,3.0], alpha_values=[1.0,2.0,3.0], apply_piaa=True, numerical_aperture=0.13, core_radius=0.00125, use_circular_lenslet=False, shift=False):
+def simulate(results_save_path, iterations=100, dz_values=[0.13,0.135,0.14,0.145,0.15], seeing_values=[0.0,1.0,2.0,3.0], alpha_values=[1.0,2.0,3.0], apply_piaa=True, numerical_aperture=0.13, core_radius=0.00125, use_circular_lenslet=False, shift=False):
     """
     Parameters
     ----------
@@ -897,7 +899,7 @@ def simulate(results_save_path, iterations=100, dz_values=[0.6,0.7,0.8,0.9], see
         
     return simulation_results    
 
-def construct_simulation_plots(save_path, results, dz_values=[0.6,0.7,0.8,0.9], seeing_values=[0.0,1.0,2.0,3.0], alpha_values=[1.0,2.0,3.0]):
+def construct_simulation_plots(save_path, results, dz_values=[0.13,0.135,0.14,0.145,0.15], seeing_values=[0.0,1.0,2.0,3.0], alpha_values=[1.0,2.0,3.0]):
     """Constructs and saves plots of the output of piaa.simulate()
     Each plot is of dz (independent) vs eta (dependent) for a given seeing value, with lines of varying alpha being plotted
     
