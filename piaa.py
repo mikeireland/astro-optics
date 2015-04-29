@@ -351,8 +351,8 @@ class PIAA_System:
         self.real_heights = True                 # ...
         self.dx = 2.0/1000.0                     # Resolution/sampling in mm/pixel
         self.npix = 2048                         # Number of pixels for the simulation
-        self.wavelength_in_mm = 1.0/1000.0       # Wavelength of light in mm
-        self.focal_length_1 = 200                # Focal length of wavefront after PIAA lens #2
+        self.wavelength_in_mm = 0.52/1000.0       # Wavelength of light in mm
+        self.focal_length_1 = 94                 # Focal length of wavefront after PIAA lens #2
         self.focal_length_2 = 3.02               # Focal length of 3.02mm lens
         self.focal_length_3 = 4.64               # Focal length of 4.64mm square lenslet
         self.circular_lens_diameter = 2.0        # Diameter of the 3.02mm circular lens
