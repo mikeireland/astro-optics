@@ -575,17 +575,24 @@ class PIAA_System:
         coupling: float
             The coupling between the fibre mode and the electric_field (Max 1)
         """
-        # Crop the electric field
-        low = self.npix * 12 / 32
-        upper = self.npix * 20 / 32
-        electric_field = electric_field[low:upper,low:upper]
+        # Crop the electric field to the central 1/4
+        low = self.npix * 3/8
+        upper = self.npix * 5/8
         
         # Compute the fibre mode and shift (if required)
+        #!!! The fiber mode should obviously not be computed over such a large range !!!
         fibre_mode = self.get_fibre_mode()[(low + x_offset):(upper + x_offset), (low + y_offset):(upper + y_offset)]
-        
-        # Compute overlap integral
-        num = np.abs(np.sum(fibre_mode*np.conj(electric_field)))**2
+       
+        # Compute overlap integral - denominator first
         den = np.sum(np.abs(fibre_mode)**2) * np.sum(np.abs(electric_field)**2)
+        #Crop the electric field and compute the numerator
+        electric_field = electric_field[low:upper,low:upper]
+        num = np.abs(np.sum(fibre_mode*np.conj(electric_field)))**2
+        
+        pdb.set_trace()
+        #Run the next lines to see that this offset isn't right!
+        #plt.imshow(np.abs(fibre_mode)**0.5)
+        #plt.imshow(np.abs(electric_field)**0.5)
         
         coupling = num / den
         
