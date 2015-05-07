@@ -585,15 +585,11 @@ class PIAA_System:
        
         # Compute overlap integral - denominator first
         den = np.sum(np.abs(fibre_mode)**2) * np.sum(np.abs(electric_field)**2)
+        
         #Crop the electric field and compute the numerator
         electric_field = electric_field[low:upper,low:upper]
         num = np.abs(np.sum(fibre_mode*np.conj(electric_field)))**2
-        
-        pdb.set_trace()
-        #Run the next lines to see that this offset isn't right!
-        #plt.imshow(np.abs(fibre_mode)**0.5)
-        #plt.imshow(np.abs(electric_field)**0.5)
-        
+
         coupling = num / den
         
         return coupling
@@ -865,9 +861,13 @@ def propagate_to_fibre(dz, offset, seeing=1.0, gaussian_alpha=2.0, apply_piaa=Tr
         shift = int(lens.lenslet_width / lens.dx)
         
         # Variable to store the coupling for the central fibre (1), centre and horizontal/vertical fibres (5) and all, including diagonals (9)
-        coupling_1_5_9 = [0, 0, 0]
+        coupling_1_to_9 = []
+        aperture_loss_1_to_9 = []
+        eta_1_5_9 = [0,0,0]
         
         distance_to_fibre = 1.0/(1.0/lens.focal_length_3 - 1.0/(distance_to_lenslet - lens.focal_length_2))
+        fibre_mask = optics.circle(lens.npix, lens.fibre_core_radius * 2 / lens.dx)
+        
         #print "Distance to Fibre: " + str(distance_to_fibre)
 
         # For each of the 9 microlenses 
@@ -886,32 +886,32 @@ def propagate_to_fibre(dz, offset, seeing=1.0, gaussian_alpha=2.0, apply_piaa=Tr
                 efield_after = efield_after + np.roll(np.roll(ef_at_fibre, -1*shift*y, axis=1), -1*shift*x, axis=0)
             
                 # Compute the coupling, applying an offset to the fibre mode as required (To account for the outer fibres being off centre and displaced outwards)
-                coupling = lens.compute_coupling(ef_at_fibre, -1*offset*x, -1*offset*y)
+                coupling = lens.compute_coupling(ef_at_fibre, offset*x, offset*y)
+                coupling_1_to_9.append(coupling)
                 
-                # Combine the couplings for each set of lenses (1, 5, 9)
-                # Aperture loss is constant, so it multiplied by the sum gives eta
-                #print x, y
+                # [11] - Compute aperture loss and eta
+                # Calculate aperture loss for the microlens by calculating the light that gets into the fibre (use a circular mask)
+                aperture_loss_fibre = np.sum(np.abs(ef_at_fibre)**2) / np.sum(np.abs(electric_field[0])**2)
+                aperture_loss_1_to_9.append(aperture_loss_fibre)
                 
+                # Calculate and combine the eta for each set of lenses (1, 5, 9)
                 # 1 Fibre
                 if (x == 0) and (y == 0):
-                    coupling_1_5_9[0] += coupling
+                    eta_1_5_9[0] += coupling * aperture_loss_fibre
                 # 5 Fibres   
                 if not ((np.abs(x) == 1) and (np.abs(y) == 1)):
-                    coupling_1_5_9[1] += coupling                 
+                    eta_1_5_9[1] += coupling * aperture_loss_fibre               
                 # 9 Fibres
-                coupling_1_5_9[2] += coupling
+                eta_1_5_9[2] += coupling * aperture_loss_fibre
       
-        # [11] - Compute aperture loss and eta
         electric_field.append(efield_after)
-        aperture_loss = np.sum(np.abs(electric_field[-1])**2) / np.sum(np.abs(electric_field[0])**2)
-        eta = [i * aperture_loss for i in coupling_1_5_9]
         
         t.append(time.time())
         #print t[1] - t[0]
-        return coupling_1_5_9, aperture_loss, eta, electric_field
+        return coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9, electric_field
 
     
-def simulate(results_save_path, offset, iterations=50, dz_values=[0.135,0.14,0.145], seeing_values=[0.0,1.0,2.0,3.0], alpha_values=[2.0], apply_piaa=True, numerical_aperture=0.13, core_radius=0.00125, use_circular_lenslet=False):
+def simulate(results_save_path, offset, iterations=50, dz_values=[0.145,0.15,0.155], seeing_values=[0.0,1.0,2.0,3.0], alpha_values=[2.0], apply_piaa=True, numerical_aperture=0.13, core_radius=0.00125, use_circular_lenslet=False):
     """
     Parameters
     ----------
@@ -984,7 +984,7 @@ def simulate(results_save_path, offset, iterations=50, dz_values=[0.135,0.14,0.1
         
     return simulation_results    
 
-def construct_simulation_plots(save_path, results, dz_values=[0.135,0.14,0.145], seeing_values=[0.0,1.0,2.0,3.0], number_of_fibres=[1,5,9]):
+def construct_simulation_plots(save_path, results, dz_values=[0.145,0.15,0.155], seeing_values=[0.0,1.0,2.0,3.0], number_of_fibres=[1,5,9]):
     """Constructs and saves plots of the output of piaa.simulate()
     Each plot is of dz (independent) vs eta (dependent) for a given seeing value, with lines of varying alpha being plotted
     
@@ -1024,4 +1024,4 @@ def construct_simulation_plots(save_path, results, dz_values=[0.135,0.14,0.145],
         pl.xlabel("seeing (arcsecond)")
         pl.ylabel("eta (%)")
         pl.legend(prop={'size':6})
-        pl.savefig( (save_path + "Simulation Plot, dz = " + str(dz) + ".jpg" ))
+        pl.savefig( (save_path + "Simulation Plot, dz = " + str(dz) + ".png" ))
