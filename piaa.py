@@ -332,7 +332,7 @@ def create_piaa_lenses(alpha, r0, frac_to_focus, delta, dt, n_med, thickness, ra
 class PIAA_System:
     """A class to model the behaviour of the PIAA system, including all lenses, propagation and fibre fitting.
     """
-    def __init__(self):
+    def __init__(self, stromlo_variables=True):
         """Constructs the class with the following list of default parameters.
         """        
         self.alpha = 2.0                         # Gaussian exponent term
@@ -348,16 +348,22 @@ class PIAA_System:
         self.real_heights = True                 # ...
         self.dx = 2.0/1000.0                     # Resolution/sampling in mm/pixel
         self.npix = 2048                         # Number of pixels for the simulation
-        self.wavelength_in_mm = 0.7/1000.0       # Wavelength of light in mm (0.52um for Stromlo and 0.7um for Subaru)
         self.focal_length_1 = 94                 # Focal length of wavefront after PIAA lens #2
         self.focal_length_2 = 3.02               # Focal length of 3.02mm lens
         self.focal_length_3 = 4.64               # Focal length of 4.64mm square lenslet
         self.circular_lens_diameter = 1.0        # Diameter of the 3.02mm circular lens
         self.lenslet_width = 1.0                 # Width of the square lenslet in mm
-        self.fibre_core_radius = 0.00175         # Width of the optical fibre in mm (0.00125mm for Stromlo, 0.00175mm for Subaru)
         self.numerical_aperture = 0.13           # Numerical aperture of the optical fibre 
         self.mode = None
-       
+        
+        # Stromlo/Subaru   
+        if stromlo_variables:
+            self.wavelength_in_mm = 0.52/1000.0    # Wavelength of light in mm (0.52um for Stromlo)
+            self.fibre_core_radius = 0.00125       # Width of the optical fibre in mm (0.00125mm for Stromlo)
+        else:
+            self.wavelength_in_mm = 0.7/1000.0   # Wavelength of light in mm (0.7um for Subaru)
+            self.fibre_core_radius = 0.00175     # Width of the optical fibre in mm (0.00175mm for Subaru)
+            
     def create_piaa(self):
         """Creates the PIAA lenses using the stored physical parameters
         """ 
@@ -726,7 +732,7 @@ def propagate_and_save(directory, distance_step, dz, seeing=1.0, gaussian_alpha=
     return coupling, electric_field    
     
         
-def propagate_to_fibre(dz, offset, seeing=1.0, gaussian_alpha=2.0, apply_piaa=True, use_circular_lenslet=False):
+def propagate_to_fibre(dz, offset, seeing=1.0, gaussian_alpha=2.0, apply_piaa=True, use_circular_lenslet=False, stromlo_variables=True):
     """Propagates the wavefront to the fibre, passing through the following stages:
         1 - Apply atmospheric turbulence
         2 - Pass the wavefront through the telescope pupil (with annulus)
@@ -781,7 +787,7 @@ def propagate_to_fibre(dz, offset, seeing=1.0, gaussian_alpha=2.0, apply_piaa=Tr
     t.append( (time.time(), "Start") )
     
     # Create the lens object
-    lens = PIAA_System()
+    lens = PIAA_System(stromlo_variables)
     t.append( (time.time(), time.time() - t[-1][0], "Create PIAA_System") )
     
     # Initialise seeing and alpha
@@ -818,7 +824,7 @@ def propagate_to_fibre(dz, offset, seeing=1.0, gaussian_alpha=2.0, apply_piaa=Tr
     # [6] - Propagate the electric field to the 3.02mm lens
     distance_to_lens = lens.focal_length_1 + lens.focal_length_2 + dz
     electric_field.append(lens.propagate(electric_field[-1], distance_to_lens))                                             
-    #print "Distance to 3.02mm Lens: ", distance_to_lens
+    print "Distance to 3.02mm Lens: ", distance_to_lens
     t.append( (time.time(), time.time() - t[-1][0], "Propagate to 3.022mm lens") )   
     
     # [7] - Pass the electric field through the 3.02mm lens and circular mask
@@ -827,7 +833,7 @@ def propagate_to_fibre(dz, offset, seeing=1.0, gaussian_alpha=2.0, apply_piaa=Tr
     
     # [8] - Propagate to the 1mm square lenslet
     distance_to_lenslet = 1 / ( 1/lens.focal_length_2 - 1/(lens.focal_length_2 + dz) )  #From thin lens formula
-    #print "Distance to Lenslet: " + str(distance_to_lenslet)
+    print "Distance to Lenslet: " + str(distance_to_lenslet)
     electric_field.append(lens.propagate(electric_field[-1], distance_to_lenslet)) 
     t.append( (time.time(), time.time() - t[-1][0], "Propagate to lenslet array") )       
     
@@ -882,7 +888,7 @@ def propagate_to_fibre(dz, offset, seeing=1.0, gaussian_alpha=2.0, apply_piaa=Tr
         eta_1_5_9 = [0,0,0]
         
         distance_to_fibre = 1.0/(1.0/lens.focal_length_3 - 1.0/(distance_to_lenslet - lens.focal_length_2))
-        #print "Distance to Fibre: " + str(distance_to_fibre)
+        print "Distance to Fibre: " + str(distance_to_fibre)
         
         t.append( (time.time(), time.time() - t[-1][0], "Microlens array setup") )
 
@@ -933,7 +939,7 @@ def propagate_to_fibre(dz, offset, seeing=1.0, gaussian_alpha=2.0, apply_piaa=Tr
       
         electric_field.append(efield_after)  
         t.append( (time.time(), "End") )   
-        #print "Total time: ", t[-1][0] - t[0][0] 
+        print "Total time: ", t[-1][0] - t[0][0] 
         # for i in t:
             # print i[1:]
         return coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9, electric_field
@@ -1057,7 +1063,7 @@ def construct_simulation_plots(save_path, results, offset, iterations=50, dz_val
             pl.plot(seeing,eta, label=("# Fibres = " + str(n)))
             
         # All alphas plotted, apply labels/legend and save
-        title = "Eta as a Function of Seeing, Averaged Over " + str(iterations) + " iterations " 
+        title = "Eta as a Function of Seeing, Averaged Over " + str(iterations) + " Iterations " 
         details = "(dz = " + str(dz) + ", offset = " + str(offset) + ", PIAA = " + str(apply_piaa) + ", Square Microlens Array = " + str(not use_circular_lenslet) + ")"
         pl.title(title + "\n" + details, fontsize=12)
         pl.xlabel("seeing (arcseconds)", fontsize=12)
