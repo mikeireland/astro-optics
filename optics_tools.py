@@ -96,7 +96,7 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
     else:
         return radial_prof
 
-def fresnel(wf, m_per_pix, d, wave):
+def propagate_by_fresnel(wf, m_per_pix, d, wave):
     """Propagate a wave by Fresnel diffraction
     
     Parameters
@@ -215,79 +215,7 @@ def moffat2d(sz,hw, beta=4.0):
     xy = np.meshgrid(x,x)
     r = np.sqrt(xy[0]**2 + xy[1]**2)
     return moffat(r, hw, beta=beta)
-    
-def circle(dim,width):
-    """This function creates a circle.
-    
-    Parameters
-    ----------
-    dim: int
-        Size of the 2D array
-    width: int
-        diameter of the circle
-        
-    Returns
-    -------
-    pupil: float array (sz,sz)
-        2D array circular pupil mask
-    """
-    x = np.arange(dim)-dim/2.0
-    xy = np.meshgrid(x,x)
-    xx = xy[1]
-    yy = xy[0]
-    circle = ((xx**2+yy**2) < (width/2.0)**2).astype(float)
-    return circle
-    
-def square(dim, width):
-    """This function creates a square.
-    
-    Parameters
-    ----------
-    dim: int
-        Size of the 2D array
-    width: int
-        width of the square
-        
-    Returns
-    -------
-    pupil: float array (sz,sz)
-        2D array square pupil mask
-    """
-    x = np.arange(dim)-dim/2.0
-    xy = np.meshgrid(x,x)
-    xx = xy[1]
-    yy = xy[0]
-    w = np.where( (yy < width/2) * (yy > (-width/2)) * (xx < width/2) * (xx > (-width/2)))
-    square = np.zeros((dim,dim))
-    square[w] = 1.0
-    return square
-    
-def hexagon(dim, width):
-    """This function creates a hexagon.
-    
-    Parameters
-    ----------
-    dim: int
-        Size of the 2D array
-    width: int
-        flat-to-flat width of the hexagon
-        
-    Returns
-    -------
-    pupil: float array (sz,sz)
-        2D array hexagonal pupil mask
-    """
-    x = np.arange(dim)-dim/2.0
-    xy = np.meshgrid(x,x)
-    xx = xy[1]
-    yy = xy[0]
-    w = np.where( (yy < width/2) * (yy > (-width/2)) * \
-     (yy < (width-np.sqrt(3)*xx)) * (yy > (-width+np.sqrt(3)*xx)) * \
-     (yy < (width+np.sqrt(3)*xx)) * (yy > (-width-np.sqrt(3)*xx)))
-    hex = np.zeros((dim,dim))
-    hex[w]=1.0
-    return hex
-    
+       
 def snell(u, f, n_i, n_f):
     """Snell's law at an interface between two dielectrics
     
@@ -347,14 +275,7 @@ def grating_sim(u, l, s, ml_d, refract=False):
     v = v_l*l + v_s*s + v_n*n
     
     return v
-    
-def rotate_xz(u, theta_deg):
-    """Rotates a vector u in the x-z plane, clockwise where x is up and
-    z is right"""
-    th = np.radians(theta_deg)
-    M = np.array([[np.cos(th),0,np.sin(th)],[0,1,0],[-np.sin(th),0,np.cos(th)]])
-    return np.dot(M, u)
-    
+      
 def nglass(l, glass='sio2'):
     """Refractive index of fused silica and other glasses. Note that C is
     in microns^{-2}
@@ -385,7 +306,6 @@ def nglass(l, glass='sio2'):
     for i in range(len(B)):
             n += B[i]*l**2/(l**2 - C[i])
     return np.sqrt(n)
-    
 
 def join_bessel(U,V,j):
     """In order to solve the Laplace equation in cylindrical co-ordinates, both the
@@ -513,25 +433,107 @@ def rebin(a, shape):
     sh = shape[0],a.shape[0]//shape[0],shape[1],a.shape[1]//shape[1]
     return a.reshape(sh).sum(-1).sum(1)
 
-def regrid_fft(im,new_shape):
-    """Regrid onto a larger number of pixels using an fft. This is optimal
-    for Nyquist sampled data.
+def calculate_tip_tilt(turbulent_wf, pupil, size):
+    """
+    """
+    x = np.arange(size) - size/2
+    xy = np.meshgrid(x, x)
+    xtilt_func = xy[0]*pupil
+    ytilt_func = xy[0]*pupil
+    
+    xtilt = np.sum(xtilt_func * turbulent_wf)/np.sum(xtilt_func**2)
+    ytilt = np.sum(ytilt_func * turbulent_wf)/np.sum(ytilt_func**2)
+    
+    corrected_wf = turbulent_wf*pupil - ytilt_func*ytilt - xtilt_func*xtilt
+    
+    return corrected_wf   
 
+def apply_and_scale_turbulent_ef(turbulence, npix, wavelength, dx, seeing):
+    """ Applies an atmosphere in the form of Kolmogorov turbulence to an initial wavefront and scales
     Parameters
     ----------
-    im: array
-        The input image.
-    new_shape: (new_y,new_x)
-        The new shape
-
-    Notes
-    ------
-    TODO: This should work with an arbitrary number of dimensions
+    
+    npix: integer
+        The size of the square of Kolmogorov turbulence generated
+    wavelength: float
+        The wavelength in mm. Amount of atmospheric distortion depends on the wavelength. 
+    dx: float
+        Resolution in mm/pixel
+    seeing: float
+        Seeing in arcseconds before magnification
+    Returns
+    -------
+    
+    electric_field: 
+    
     """
-    ftim = np.fft.rfft2(im)
-    new_ftim = np.zeros((new_shape[0], new_shape[1]/2 + 1),dtype='complex')
-    new_ftim[0:ftim.shape[0]/2,0:ftim.shape[1]] = \
-        ftim[0:ftim.shape[0]/2,0:ftim.shape[1]]
-    new_ftim[new_shape[0]-ftim.shape[0]/2:,0:ftim.shape[1]] = \
-        ftim[ftim.shape[0]/2:,0:ftim.shape[1]]
-    return np.fft.irfft2(new_ftim)
+    if seeing > 0.0:
+        # Convert seeing to radians
+        seeing_in_radians = np.radians(seeing/3600.)
+        
+        # Generate the Kolmogorov turbulence
+        #turbulence = optics_tools.kmf(npix)
+        
+        # Calculate r0 (Fried's parameter), which is a measure of the strength of seeing distortions
+        r0 = 0.98 * wavelength / seeing_in_radians 
+        
+        # Apply the atmosphere and scale
+        wf_in_radians = turbulence * np.sqrt(6.88*(dx/r0)**(5.0/3.0))
+            
+        # Convert the wavefront to an electric field
+        turbulent_ef = np.exp(1.0j * wf_in_radians)
+        
+        return turbulent_ef
+    else:
+        # Do not apply phase distortions --> multiply by unity
+        return 1.0
+
+def calculate_fibre_mode(wavelength_in_mm, fibre_core_radius, numerical_aperture, npix, dx):
+    """Computes the mode of the optical fibre.
+    
+    Returns
+    -------
+    fibre_mode: 2D numpy.ndarray
+        The mode of the optical fibre
+    """
+    # Calculate the V number for the model
+    v = compute_v_number(wavelength_in_mm, fibre_core_radius, numerical_aperture)
+    
+    # Use the V number to calculate the mode
+    fibre_mode = mode_2d(v, fibre_core_radius, sampling=dx, sz=npix)
+
+    return fibre_mode
+
+
+def compute_coupling(npix, dx, electric_field, lens_width, fibre_mode, x_offset, y_offset):
+    """Computes the coupling between the electric field and the optical fibre using an overlap integral.
+    
+    Parameters
+    ----------
+    electric_field: 2D numpy.ndarray
+        The electric field entering the optical fibre
+   
+    Returns
+    -------
+    coupling: float
+        The coupling between the fibre mode and the electric_field (Max 1)
+    """
+    # Crop the electric field to the central 1/4
+    low = npix/2 - int(lens_width / dx / 2) #* 3/8
+    upper = npix/2 + int(lens_width / dx / 2) #* 5/8
+    
+    # Compute the fibre mode and shift (if required)
+    fibre_mode = fibre_mode[(low + x_offset):(upper + x_offset), (low + y_offset):(upper + y_offset)]
+    
+    # Compute overlap integral - denominator first
+    den = np.sum(np.abs(fibre_mode)**2) * np.sum(np.abs(electric_field)**2)
+    
+    #Crop the electric field and compute the numerator
+    #electric_field = electric_field[low:upper,low:upper]
+    num = np.abs(np.sum(fibre_mode*np.conj(electric_field)))**2
+
+    coupling = num / den
+    
+    return coupling
+
+
