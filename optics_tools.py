@@ -1,8 +1,9 @@
 """A selection of useful functions for optics, especially Fourier optics. The
 documentation is designed to be used with sphinx (still lots to do)
 
-Exercise for Adam: use np.fft.fft2 and np.fft.fftshift to make a Fraunhofer
-diffraction function.
+Authors:
+Dr Michael Ireland
+Adam Rains
 """
 
 from __future__ import print_function
@@ -434,7 +435,23 @@ def rebin(a, shape):
     return a.reshape(sh).sum(-1).sum(1)
 
 def calculate_tip_tilt(turbulent_wf, pupil, size):
-    """
+    """Given a turbulent wavefront, calculate the tip/tilt (horizontal and vertical slope)
+    
+    TODO: Only compute turbulence over square immediately surrounding the pupil to save on unnecessary computation
+    
+    Parameters
+    ----------
+    turbulent_wf: np.array([[...]...])
+        2D square of numbers representing a turbulent patch of atmosphere
+    pupil: np.array([[...]...])
+        The pupil of the telescope receiving the light pasing through the turbulence.
+    size: int
+        Size of input_wf per side, preferentially a power of two (npix=2**n)
+        
+    Return
+    ------
+    corrected_wf: np.array([[...]...])
+        Tip/Tilt corrected turbulent_wf
     """
     x = np.arange(size) - size/2
     xy = np.meshgrid(x, x)
@@ -450,9 +467,9 @@ def calculate_tip_tilt(turbulent_wf, pupil, size):
 
 def apply_and_scale_turbulent_ef(turbulence, npix, wavelength, dx, seeing):
     """ Applies an atmosphere in the form of Kolmogorov turbulence to an initial wavefront and scales
+    
     Parameters
     ----------
-    
     npix: integer
         The size of the square of Kolmogorov turbulence generated
     wavelength: float
@@ -463,9 +480,8 @@ def apply_and_scale_turbulent_ef(turbulence, npix, wavelength, dx, seeing):
         Seeing in arcseconds before magnification
     Returns
     -------
-    
-    electric_field: 
-    
+    turbulent_ef or 1.0: np.array([[...]...]) or 1.0
+        Return an array of phase shifts in imperfect seeing, otherwise return 1.0, indicating no change to the incident wave.
     """
     if seeing > 0.0:
         # Convert seeing to radians
@@ -490,10 +506,21 @@ def apply_and_scale_turbulent_ef(turbulence, npix, wavelength, dx, seeing):
 
 def calculate_fibre_mode(wavelength_in_mm, fibre_core_radius, numerical_aperture, npix, dx):
     """Computes the mode of the optical fibre.
-    
+    Parameters
+    ----------
+    wavelength_in_mm: float
+        The wavelength in mm
+    fibre_core_radius: float
+        The radius of the fibre core in mm
+    numerical_aperture: float
+        The numerical aperture of the fibre
+    npix: int
+        Size of input_wf per side, preferentially a power of two (npix=2**n)
+    dx: float
+        Resolution of the wave in mm/pixel    
     Returns
     -------
-    fibre_mode: 2D numpy.ndarray
+    fibre_mode: np.array([[...]...])
         The mode of the optical fibre
     """
     # Calculate the V number for the model
@@ -510,8 +537,20 @@ def compute_coupling(npix, dx, electric_field, lens_width, fibre_mode, x_offset,
     
     Parameters
     ----------
-    electric_field: 2D numpy.ndarray
-        The electric field entering the optical fibre
+    npix: int
+        Size of input_wf per side, preferentially a power of two (npix=2**n)
+    dx: float
+        Resolution of the wave in mm/pixel      
+    electric_field: np.array([[...]...])
+        The electric field at the fibre plane
+    lens_width: float
+        The width of the a single microlens (used for minimising the unnecessary calculations)
+    fibre_mode: np.array([[...]...])
+        The mode of the optical fibre   
+    x_offset: int
+        x offset of the focal point at the fibre plane relative to the centre of the microlens.
+    y_offset: int
+        y offset of the focal point at the fibre plane relative to the centre of the microlens.           
    
     Returns
     -------

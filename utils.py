@@ -1,6 +1,8 @@
 """Useful methods to assist with various functions.
 
-Author: Adam Rains 
+Author: 
+Dr Michael Ireland
+Adam Rains 
 """
 import pylab as pl
 #import cv2

@@ -1,4 +1,7 @@
-"""
+"""Models a the RHEA fibre feed composed of OpticalElements.
+
+Authors:
+Adam Rains
 """
 import numpy as np
 import optics
@@ -49,8 +52,7 @@ class Feed:
         self.use_microlens_array = use_microlens_array
         
     def create_optical_elements(self):
-        """
-        """
+        """Creates each of the OpticalElements composing the RHEA feed"""
         # Create telescope pupil
         r_pupil = (self.piaa_radius_in_mm * 2)/self.dx
         r_obstruction = (self.piaa_radius_in_mm * 2 * self.r0)/self.dx
@@ -71,8 +73,37 @@ class Feed:
             self.microlens_array = optics.MicrolensArray_3x3(self.focal_length_3, self.lenslet_width)
             
     def propagate_to_fibre(self, dz, offset, turbulence, seeing=1.0, alpha=2.0, use_tip_tilt=True):
-        """
-        """
+        """Simulate light propagating through a turbulent atmosphere and through the entire fibre feed, before being coupled to optical fibre/s
+        
+        Parameters
+        ----------
+    dz: float   
+        Free parameter, determines the magnification of the microlens array (changed to optimise coupling)
+    offset: int
+        The x/y distance that each of the outer fibres is off-centre in a radially outwards direction
+    seeing: float
+        The seeing for the telescope in arcseconds.
+    gaussian_alpha: float
+        Exponent constant from the Gaussian distribution achieved by the PIAA optics    
+    use_tip_tilt: boolean
+        Whether to apply Tip/Tilt correction to the incident wavefront
+        
+    Returns
+    -------
+
+    coupling_1_to_9: [float, float, float]
+        The coupling of the wave at the fibre plane with the fibre mode for c1 (the central fibre), c5 (the central row and column) and c9 (entire 3x3 array)
+    aperture_loss_1_to_9
+        The aperture loss of the wave at the fibre plane with the fibre mode for a1 (the central fibre), a5 (the central row and column) and a9 (entire 3x3 array)
+    eta_1_5_9    
+        The efficiency/throughput (eta = coupling * aperture loss) of the wave at the fibre plane with the fibre mode for a1 (the central fibre), a5 (the central row and column) and a9 (entire 3x3 array).  
+    electric_field: np.array([[[...]...]...])
+        Array of the electric field at various points throughout the length of the feed.
+    turbulence: np.array([[...]...])
+        The turbulence that was applied to the wave initially, which may or may not be Tip/Tilt corrected
+    tef: np.array([[...]...])
+        The phase aberrations introduced by the turbulence
+    """
         # Initialise seeing and alpha
         self.seeing_in_arcsec = seeing
         self.alpha = alpha
@@ -81,55 +112,44 @@ class Feed:
         self.create_optical_elements()
         
         # Initialise list to store electric fields from each step
-        #print "Seeing:", self.seeing_in_arcsec
         electric_field= []
         electric_field.append(self.telescope_pupil)
 
         # Apply tip/tilt
         if use_tip_tilt:
-            #print "Applying tip/tilt"
             turbulence = optics_tools.calculate_tip_tilt(turbulence, self.telescope_pupil, self.npix)
         
         # Apply effect of turbulence at telescope pupil (phase distortions)
         tef = optics_tools.apply_and_scale_turbulent_ef(turbulence, self.npix, self.wavelength_in_mm, self.dx, self.seeing_in_arcsec * self.telescope_magnification)
-        #print "Passing through turbulence"
         electric_field.append( (self.telescope_pupil * tef) )
         
         # Apply PIAA
         if self.use_piaa:
-            #print "Applying PIAA"
             electric_field.append( self.piaa_optics.apply(electric_field[-1]) )
         
         # Apply Lens #1
-        #print "Applying lens #1"
         electric_field.append( self.lens_1.apply(electric_field[-1], self.npix, self.dx, self.wavelength_in_mm) )
         
         # Propagate to lens #2
-        #print "Propagating to lens #2"
         distance_to_lens = self.focal_length_1 + self.focal_length_2 + dz
         electric_field.append( optics_tools.propagate_by_fresnel(electric_field[-1], self.dx, distance_to_lens, self.wavelength_in_mm) )
         
         # Apply Lens #2
-        #print "Applying lens #2"
         electric_field.append( self.lens_2.apply(electric_field[-1], self.npix, self.dx, self.wavelength_in_mm) )
         
         # Propagate to microlens array
-        #print "Propagating to microlens array"
         distance_to_microlens_array = 1 / ( 1/self.focal_length_2 - 1/(self.focal_length_2 + dz) )  #From thin lens formula
         electric_field.append( optics_tools.propagate_by_fresnel(electric_field[-1], self.dx, distance_to_microlens_array, self.wavelength_in_mm) )
         
         # Interpolate by 2x and update dx for future use
-        #print "Interpolate"
         electric_field.append( utils.interpolate_by_2x(electric_field[-1], self.npix) )
         new_dx =  self.dx / 2.0
         new_npix = self.npix * 2.0
         
         # Compute Fibre mode
-        #print "Compute mode"
         self.fibre_mode = optics_tools.calculate_fibre_mode(self.wavelength_in_mm, self.fibre_core_radius, self.numerical_aperture, new_npix, new_dx)
         
         # Apply microlens array, propagate to fibre and compute coupling
-        #print "Apply microlens array and couple"
         distance_to_fibre = 1.0/(1.0/self.focal_length_3 - 1.0/(distance_to_microlens_array - self.focal_length_2))
         input_field = np.sum(np.abs(electric_field[0])**2)
         ef_at_fibre, coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9 = self.microlens_array.apply_propagate_and_couple(electric_field[-1], new_npix, new_dx, self.wavelength_in_mm, distance_to_fibre, input_field, offset, self.fibre_mode)
@@ -139,6 +159,7 @@ class Feed:
         return coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9, electric_field, turbulence, tef
 
 def test(seeing,  use_piaa=True, use_tip_tilt=True):
+    """Method testing the functionality of propagate_to_fibre"""
     tm = []
     tm.append( (time.time(), "Start") )
     turbulence = optics_tools.kmf(2048)
