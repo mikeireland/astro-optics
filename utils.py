@@ -3,7 +3,7 @@
 Author: Adam Rains 
 """
 import pylab as pl
-import cv2
+#import cv2
 import glob
 
 def save_plot(data, title, directory, imagename, format='.jpg'):
