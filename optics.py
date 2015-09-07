@@ -1,537 +1,286 @@
-"""A selection of useful functions for optics, especially Fourier optics. The
-documentation is designed to be used with sphinx (still lots to do)
+"""This contains classes modelling optical elements such as lenses.
 
-Exercise for Adam: use np.fft.fft2 and np.fft.fftshift to make a Fraunhofer
-diffraction function.
+Each optical element has a focal length and width and implements the method "apply", which enables it to modify an incident wave
+
+Authors:
+Adam Rains
 """
 
-from __future__ import print_function
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy import special
-from scipy import optimize
+import optics_tools
+import piaa
+import utils
 
-def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return_nr=False, 
-        binsize=0.5, weights=None, steps=False, interpnan=False, left=None, right=None, return_max=False):
-    """
-    Calculate the azimuthally averaged radial profile.
-    NB: This was found online and should be properly credited! Modified by MJI
-
-    image - The 2D image
-    center - The [x,y] pixel coordinates used as the center. The default is 
-             None, which then uses the center of the image (including 
-             fractional pixels).
-    stddev - if specified, return the azimuthal standard deviation instead of the average
-    returnradii - if specified, return (radii_array,radial_profile)
-    return_nr   - if specified, return number of pixels per radius *and* radius
-    binsize - size of the averaging bin.  Can lead to strange results if
-        non-binsize factors are used to specify the center and the binsize is
-        too large
-    weights - can do a weighted average instead of a simple average if this keyword parameter
-        is set.  weights.shape must = image.shape.  weighted stddev is undefined, so don't
-        set weights and stddev.
-    steps - if specified, will return a double-length bin array and radial
-        profile so you can plot a step-form radial profile (which more accurately
-        represents what's going on)
-    interpnan - Interpolate over NAN values, i.e. bins where there is no data?
-        left,right - passed to interpnan; they set the extrapolated values
-    return_max - (MJI) Return the maximum index.
-
-    If a bin contains NO DATA, it will have a NAN value because of the
-    divide-by-sum-of-weights component.  I think this is a useful way to denote
-    lack of data, but users let me know if an alternative is prefered...
+class OpticalElement:
+    """The base class for all optical elements."""
     
-    """
-    # Calculate the indices from the image
-    y, x = np.indices(image.shape)
-
-    if center is None:
-        center = np.array([(x.max()-x.min())/2.0, (y.max()-y.min())/2.0])
-
-    r = np.hypot(x - center[0], y - center[1])
-
-    if weights is None:
-        weights = np.ones(image.shape)
-    elif stddev:
-        raise ValueError("Weighted standard deviation is not defined.")
-
-    # the 'bins' as initially defined are lower/upper bounds for each bin
-    # so that values will be in [lower,upper)  
-    nbins = int(np.round(r.max() / binsize)+1)
-    maxbin = nbins * binsize
-    bins = np.linspace(0,maxbin,nbins+1)
-    # but we're probably more interested in the bin centers than their left or right sides...
-    bin_centers = (bins[1:]+bins[:-1])/2.0
-
-    # Find out which radial bin each point in the map belongs to
-    whichbin = np.digitize(r.flat,bins)
-
-    # how many per bin (i.e., histogram)?
-    # there are never any in bin 0, because the lowest index returned by digitize is 1
-    nr = np.bincount(whichbin)[1:]
-
-    # recall that bins are from 1 to nbins (which is expressed in array terms by arange(nbins)+1 or xrange(1,nbins+1) )
-    # radial_prof.shape = bin_centers.shape
-
-    if stddev:
-        radial_prof = np.array([image.flat[whichbin==b].std() for b in xrange(1,nbins+1)])
-    elif return_max:
-        radial_prof = np.array([np.append((image*weights).flat[whichbin==b],-np.inf).max() for b in xrange(1,nbins+1)])
-    else:
-        radial_prof = np.array([(image*weights).flat[whichbin==b].sum() / weights.flat[whichbin==b].sum() for b in xrange(1,nbins+1)])
-
-    #import pdb; pdb.set_trace()
-
-    if interpnan:
-        radial_prof = np.interp(bin_centers,bin_centers[radial_prof==radial_prof],radial_prof[radial_prof==radial_prof],left=left,right=right)
-
-    if steps:
-        xarr = np.array(zip(bins[:-1],bins[1:])).ravel() 
-        yarr = np.array(zip(radial_prof,radial_prof)).ravel() 
-        return xarr,yarr
-    elif returnradii: 
-        return bin_centers,radial_prof
-    elif return_nr:
-        return nr,bin_centers,radial_prof
-    else:
-        return radial_prof
-
-def fresnel(wf, m_per_pix, d, wave):
-    """Propagate a wave by Fresnel diffraction
-    
-    Parameters
-    ----------
-    wf: float array
-        Wavefront, i.e. a complex electric field in the scalar approximation.
-    m_per_pix: float
-        Scale of the pixels in the input wavefront in metres.
-    d: float
-        Distance to propagate the wavefront.
-    wave: float
-        Wavelength in metres.
+    def __init__(self, focal_length, width):
+        """Initialisation for an OpticalElement.
         
-    Returns
-    -------
-    wf_new: float array
-        Wavefront after propagating.
-    """
-    #Notation on Mike's board
-    sz = wf.shape[0]
-    if (wf.shape[0] != wf.shape[1]):
-        print("ERROR: Input wavefront must be square")
-        raise UserWarning
+        Parameters
+        ----------
+        focal_length: float
+            The focal length in mm.
+        width: float
+            The width in mm.
+        """
+        self.focal_length = focal_length
+        self.width = width
     
-    #The code below came from the board, i.e. via Huygen's principle.
-    #We got all mixed up when converting to Fourier transform co-ordinates.
-    #Co-ordinate axis of the wavefront. Not that 0 must be in the corner.
-    #x = (((np.arange(sz)+sz/2) % sz) - sz/2)*m_per_pix
-    #xy = np.meshgrid(x,x)
-    #rr =np.sqrt(xy[0]**2 + xy[1]**2)
-    #h_func = np.exp(1j*np.pi*rr**2/wave/d)
-    #h_ft = np.fft.fft2(h_func)
-    
-    #Co-ordinate axis of the wavefront Fourier transform. Not that 0 must be in the corner.
-    #x is in cycles per wavefront dimension.
-    x = (((np.arange(sz)+sz/2) % sz) - sz/2)/m_per_pix/sz
-    xy = np.meshgrid(x,x)
-    uu =np.sqrt(xy[0]**2 + xy[1]**2)
-    h_ft = np.exp(1j*np.pi*uu**2*wave*d)
-    
-    g_ft = np.fft.fft2(np.fft.fftshift(wf))*h_ft
-    wf_new = np.fft.ifft2(g_ft)
-    return np.fft.fftshift(wf_new)
-
-def curved_wf(sz,m_per_pix,f_length,wave):
-    """A curved wavefront centered on the *middle*
-    of the python array.
-    
-    Try this at home:
-    
-    The wavefront phase we want is:
-    phi = alpha*n**2, with
-    alpha = 0.5*m_per_pix**2/wave/f_length
-    """
-    x = np.arange(sz) - sz/2
-    xy = np.meshgrid(x,x)
-    rr =np.sqrt(xy[0]**2 + xy[1]**2)
-    phase = 0.5*m_per_pix**2/wave/f_length*rr**2
-    return np.exp(2j*np.pi*phase)
-
-def kmf(sz):
-    """This function creates a periodic wavefront produced by Kolmogorov turbulence. 
-    It SHOULD normalised so that the variance at a distance of 1 pixel is 1 radian^2,
-    but this is totally wrong now. The correct normalisation comes from an
-    empirical calculation, scaled like in the IDL code.
-    
-    Parameters
-    ----------
-    sz: int
-        Size of the 2D array
-    
-    Returns
-    -------
-    wavefront: float array (sz,sz)
-        2D array wavefront.
-    """
-    xy = np.meshgrid(np.arange(sz/2 + 1)/float(sz), (((np.arange(sz) + sz/2) % sz)-sz/2)/float(sz))
-    dist2 = np.maximum( xy[1]**2 + xy[0]**2, 1e-12)
-    ft_wf = np.exp(2j * np.pi * np.random.random((sz,sz/2+1)))*dist2**(-11.0/12.0)*sz/15.81
-    ft_wf[0,0]=0
-    return np.fft.irfft2(ft_wf)
-    
-def test_kmf(sz,ntests):
-    vars = np.zeros(ntests)
-    for i in range(ntests):
-        wf = kmf(sz)
-        vars[i] = 0.5* ( np.mean((wf[1:,:] - wf[:-1,:])**2) + \
-                      np.mean((wf[:,1:] - wf[:,:-1])**2) )
-    print("Mean var: {0:7.3e} Sdev var: {1:7.3e}".format(np.mean(vars),np.std(vars)))
-    
-def moffat(theta, hw, beta=4.0):
-    """This creates a moffatt function for simulating seeing.
-    The output is an array with the same dimensions as theta.
-    Total Flux" is set to 1 - this only applies if sampling
-    of thetat is 1 per unit area (e.g. arange(100)).
-    
-    From Racine (1996), beta=4 is a good approximation for seeing
-    
-    Parameters
-    ----------
-    theta: float or float array
-        Angle at which to calculate the moffat profile (same units as hw)
-    hw: float
-        Half-width of the profile
-    beta: float
-        beta parameters
-    
-    """
-    denom = (1 + (2**(1.0/beta) - 1)*(theta/hw)**2)**beta
-    return (2.0**(1.0/beta)-1)*(beta-1)/np.pi/hw**2/denom
-    
-def moffat2d(sz,hw, beta=4.0):
-    """A 2D version of a moffat function
-    """
-    x = np.arange(sz) - sz/2.0
-    xy = np.meshgrid(x,x)
-    r = np.sqrt(xy[0]**2 + xy[1]**2)
-    return moffat(r, hw, beta=beta)
-    
-def circle(dim,width):
-    """This function creates a circle.
-    
-    Parameters
-    ----------
-    dim: int
-        Size of the 2D array
-    width: int
-        diameter of the circle
+    def apply(self, input_ef, npix, dx, wavelength_in_mm):
+        """Used to modify the incident wave as it passes through the OpticalElement.
+        The simplest implementation does not modify the incident wave.
         
-    Returns
-    -------
-    pupil: float array (sz,sz)
-        2D array circular pupil mask
-    """
-    x = np.arange(dim)-dim/2.0
-    xy = np.meshgrid(x,x)
-    xx = xy[1]
-    yy = xy[0]
-    circle = ((xx**2+yy**2) < (width/2.0)**2).astype(float)
-    return circle
-    
-def square(dim, width):
-    """This function creates a square.
-    
-    Parameters
-    ----------
-    dim: int
-        Size of the 2D array
-    width: int
-        width of the square
+        Parameters
+        ----------
+        input_ef: np.array([[...]...])
+            2D square incident wave consisting of complex numbers.
+        npix: int
+            Size of input_wf per side, preferentially a power of two (npix=2**n)
+        dx: float
+            Resolution of the wave in mm/pixel
+        wavelength_in_mm: float
+            Wavelength of the wave in mm
+            
+        Return
+        ------
+        input_ef: np.array([[...]...])
+            Unchanged incident wave.
+        """
+        return input_ef
         
-    Returns
-    -------
-    pupil: float array (sz,sz)
-        2D array square pupil mask
-    """
-    x = np.arange(dim)-dim/2.0
-    xy = np.meshgrid(x,x)
-    xx = xy[1]
-    yy = xy[0]
-    w = np.where( (yy < width/2) * (yy > (-width/2)) * (xx < width/2) * (xx > (-width/2)))
-    square = np.zeros((dim,dim))
-    square[w] = 1.0
-    return square
+class CircularLens(OpticalElement):
+    """A CircularLens OpticalElement - application of a curved wavefront and circular mask"""
     
-def hexagon(dim, width):
-    """This function creates a hexagon.
-    
-    Parameters
-    ----------
-    dim: int
-        Size of the 2D array
-    width: int
-        flat-to-flat width of the hexagon
+    def apply(self, input_ef, npix, dx, wavelength_in_mm):
+        """Used to modify the incident wave as it passes through the CircularLens.
         
-    Returns
-    -------
-    pupil: float array (sz,sz)
-        2D array hexagonal pupil mask
+        Parameters
+        ----------
+        input_ef: np.array([[...]...])
+            2D square incident wave consisting of complex numbers.
+        npix: int
+            Size of input_wf per side, preferentially a power of two (npix=2**n)
+        dx: float
+            Resolution of the wave in mm/pixel
+        wavelength_in_mm: float
+            Wavelength of the wave in mm
+            
+        Return
+        ------
+        output_ef: np.array([[...]...])
+            The modified wave after application of the curved wavefront and circular mask.
+        """
+        # Apply a circular mask
+        masked_ef = utils.circle(npix, (self.width / dx)) * input_ef
+        
+        # Apply the curved wavefront of the lens
+        output_ef = masked_ef * optics_tools.curved_wf(npix, dx, self.focal_length, wavelength_in_mm)
+        
+        return output_ef
+       
+        
+class MicrolensArray_3x3(OpticalElement):
+    """A 3x3 microlens array OpticalElement - a 3x3 square grid of lenses, each coming to its own focus.
     """
-    x = np.arange(dim)-dim/2.0
-    xy = np.meshgrid(x,x)
-    xx = xy[1]
-    yy = xy[0]
-    w = np.where( (yy < width/2) * (yy > (-width/2)) * \
-     (yy < (width-np.sqrt(3)*xx)) * (yy > (-width+np.sqrt(3)*xx)) * \
-     (yy < (width+np.sqrt(3)*xx)) * (yy > (-width-np.sqrt(3)*xx)))
-    hex = np.zeros((dim,dim))
-    hex[w]=1.0
-    return hex
-    
-def snell(u, f, n_i, n_f):
-    """Snell's law at an interface between two dielectrics
-    
-    Parameters
-    ----------
-    u: float array(3)
-        Input unit vector
-    f: float array(3)
-        surface normal  unit vector
-    n_i: float
-        initial refractive index
-    n_f: float
-        final refractive index.
-    """
-    u_p = u - np.sum(u*f)*f
-    u_p /= np.sqrt(np.sum(u_p**2))
-    theta_i = np.arccos(np.sum(u*f))
-    theta_f = np.arcsin(n_i*np.sin(theta_i)/n_f)
-    v = u_p*np.sin(theta_f) + f*np.cos(theta_f)
-    return v
+    def apply(self, input_ef, npix, dx, wavelength_in_mm):
+        """Applies 3x3 curved wavefronts and square masks to the incident wave.
 
-def grating_sim(u, l, s, ml_d, refract=False):
-    """This function computes an output unit vector based on an input unit
-    vector and grating properties.
-
-    Math: v \cdot l = u \cdot l (reflection)
-          v \cdot s = u \cdot s + ml_d
-    The blaze wavelength is when m \lambda = 2 d sin(theta)
-     i.e. ml_d = 2 sin(theta)
-
-    x : to the right
-    y : out of page
-    z : down the page
-    
-    Parameters
-    ----------
-    u: float array(3)
-        initial unit vector
-    l: float array(3)
-        unit vector along grating lines
-    s: float array(3)
-        unit vector along grating surface, perpendicular to lines
-    ml_d: float
-        order * \lambda/d
-    refract: bool
-        Is the grating a refractive grating? 
-    """
-    if (np.abs(np.sum(l*s)) > 1e-3):    
-        print('Error: input l and s must be orthogonal!')
-        raise UserWarning
-    n = np.cross(s,l)
-    if refract:
-        n *= -1
-    v_l = np.sum(u*l)
-    v_s = np.sum(u*s) + ml_d
-    v_n = np.sqrt(1-v_l**2 - v_s**2)
-    v = v_l*l + v_s*s + v_n*n
-    
-    return v
-    
-def rotate_xz(u, theta_deg):
-    """Rotates a vector u in the x-z plane, clockwise where x is up and
-    z is right"""
-    th = np.radians(theta_deg)
-    M = np.array([[np.cos(th),0,np.sin(th)],[0,1,0],[-np.sin(th),0,np.cos(th)]])
-    return np.dot(M, u)
-    
-def nglass(l, glass='sio2'):
-    """Refractive index of fused silica and other glasses. Note that C is
-    in microns^{-2}
-    
-    Parameters
-    ----------
-    l: wavelength 
-    """
-    try:
-        nl = len(l)
-    except:
-        l = [l]
-        nl=1
-    l = np.array(l)
-    if (glass == 'sio2'):
-        B = np.array([0.696166300, 0.407942600, 0.897479400])
-        C = np.array([4.67914826e-3,1.35120631e-2,97.9340025])
-    elif (glass == 'bk7'):
-        B = np.array([1.03961212,0.231792344,1.01046945])
-        C = np.array([6.00069867e-3,2.00179144e-2,1.03560653e2])
-    elif (glass == 'nf2'):
-        B = np.array( [1.39757037,1.59201403e-1,1.26865430])
-        C = np.array( [9.95906143e-3,5.46931752e-2,1.19248346e2])
-    else:
-        print("ERROR: Unknown glass {0:s}".format(glass))
-        raise UserWarning
-    n = np.ones(nl)
-    for i in range(len(B)):
-            n += B[i]*l**2/(l**2 - C[i])
-    return np.sqrt(n)
-    
-
-def join_bessel(U,V,j):
-    """In order to solve the Laplace equation in cylindrical co-ordinates, both the
-    electric field and its derivative must be continuous at the edge of the fiber...
-    i.e. the Bessel J and Bessel K have to be joined together. 
-    
-    The solution of this equation is the n_eff value that satisfies this continuity
-    relationship"""
-    W = np.sqrt(V**2 - U**2)
-    return U*special.jn(j+1,U)*special.kn(j,W) - W*special.kn(j+1,W)*special.jn(j,U)
-    
-def neff(V, accurate_roots=True):
- """Find the effective indices of all modes for a given value of 
- the fiber V number. """
- delu = 0.04
- U = np.arange(delu/2,V,delu)
- W = np.sqrt(V**2 - U**2)
- all_roots=np.array([])
- n_per_j=np.array([],dtype=int)
- n_modes=0
- for j in range(int(V+1)):
-   f = U*special.jn(j+1,U)*special.kn(j,W) - W*special.kn(j+1,W)*special.jn(j,U)
-   crossings = np.where(f[0:-1]*f[1:] < 0)[0]
-   roots = U[crossings] - f[crossings]*( U[crossings+1] - U[crossings] )/( f[crossings+1] - f[crossings] )
-   if accurate_roots:
-     for i,root in enumerate(roots):
-         roots[i] = optimize.newton(join_bessel, root, args=(V,j))
-   #import pdb; pdb.set_trace()
-   if (j == 0): 
-     n_modes = n_modes + len(roots)
-     n_per_j = np.append(n_per_j, len(roots))
-   else:
-     n_modes = n_modes + 2*len(roots)
-     n_per_j = np.append(n_per_j, len(roots)) #could be 2*length(roots) to account for sin and cos.
-   all_roots = np.append(all_roots,roots)
- return all_roots, n_per_j
+        Parameters
+        ----------
+        input_ef: np.array([[...]...])
+            2D square incident wave consisting of complex numbers.
+        npix: int
+            Size of input_wf per side, preferentially a power of two (npix=2**n)
+        dx: float
+            Resolution of the wave in mm/pixel
+        wavelength_in_mm: float
+            Wavelength of the wave in mm
+            
+        Return
+        ------
+        output_ef: np.array([[...]...])
+            The modified wave after application of the 3x3 curved wavefronts and square mask.
+        """           
+        # Initialise the resultant electric field (that will be the addition of each of the 9 micro-lenslets)
+        output_ef = np.zeros((npix, npix))
+        
+        # Create the square window that will shifted around to represent the light getting into each micro-lenslet
+        square = utils.square(npix, self.width/dx) + 0j
+        
+        # Starting in the top left, track the window over each row
+        for x in xrange(-1,2):
+            for y in xrange(-1,2):
+                # Calculate the base shift (the actual shift requires the -1, 0 or 1 multiplier to get direction) 
+                shift = int(self.width/dx)
+                
+                # Have the window be a curved wavefront and shift as required
+                shifted_square = np.roll(np.roll( (square * optics_tools.curved_wf(npix, dx, self.focal_length, wavelength_in_mm) ), shift*y, axis=1), shift*x, axis=0)
+                
+                # Add the resulting wavefront to a field containing the wavefronts of all 9 lenses
+                output_ef = output_ef + shifted_square * input_ef
  
-def mode_2d(V, r, j=0, n=0, sampling=0.3,  sz=1024):
-    """Create a 2D mode profile. 
+        return output_ef
     
-    Parameters
-    ----------
-    V: Fiber V number
-    
-    r: core radius in microns
-    
-    sampling: microns per pixel
-    
-    n: radial order of the mode (0 is fundumental)
-    
-    j: azimuthal order of the mode (0 is pure radial modes)
-    TODO: Nonradial modes."""
-    #First, find the neff values...
-    u_all,n_per_j = neff(V)
-    ix = np.sum(n_per_j[0:j]) + n
-    U0 = u_all[ix]
-    W0 = np.sqrt(V**2 - U0**2)
-    x = (np.arange(sz)-sz/2)*sampling/r
-    xy = np.meshgrid(x,x)
-    r = np.sqrt(xy[0]**2 + xy[1]**2)
-    win = np.where(r < 1)
-    wout = np.where(r >= 1)
-    the_mode = np.zeros( (sz,sz) )
-    the_mode[win] = special.jn(j,r[win]*U0)
-    scale = special.jn(j,U0)/special.kn(j,W0)
-    the_mode[wout] = scale * special.kn(j,r[wout]*W0)
-    return the_mode/np.sqrt(np.sum(the_mode**2))
+    def apply_propagate_and_couple(self, input_ef, npix, dx, wavelength_in_mm, distance_to_fibre, input_field, offset, fibre_mode):
+        """Applies 3x3 curved wavefronts and square masks to the incident wave.
 
-def compute_v_number(wavelength_in_mm, core_radius, numerical_aperture):
-    """Computes the V number (can be interpreted as a kind of normalized optical frequency) for an optical fibre
-    
-    Parameters
-    ----------
-    wavelength_in_mm: float
-        The wavelength of light in mm
-    core_radius: float
-        The core radius of the fibre in mm
-    numerical_aperture: float
-        The numerical aperture of the optical fibre, defined be refractive indices of the core and cladding
+        Parameters
+        ----------
+        input_ef: np.array([[...]...])
+            2D square incident wave consisting of complex numbers.
+        npix: int
+            Size of input_wf per side, preferentially a power of two (npix=2**n)
+        dx: float
+            Resolution of the wave in mm/pixel
+        wavelength_in_mm: float
+            Wavelength of the wave in mm
+        distance_to_fibre: float
+            The distance to the optical fibre plane from the front of the microlens array.
+        input_field: float
+            Sum of the EF at the telescope pupil (used to calculate the throughput and any losses)
+        offset: integer
+            Number of pixels that the 8 non-central microlenses are offset radially outwards by at the fibre plane.
+        fibre_mode: np.array([[...]...])
+            2D square mode of the optical fibre, constructed from a combination of Bessel functions
+            
+        Return
+        ------
+        output_ef: np.array([[...]...])
+            The modified wave after application of the 3x3 curved wavefronts and square mask.
+        coupling_1_to_9: [float, float, float]
+            The coupling of the wave at the fibre plane with the fibre mode for c1 (the central fibre), c5 (the central row and column) and c9 (entire 3x3 array)
+        aperture_loss_1_to_9
+            The aperture loss of the wave at the fibre plane with the fibre mode for a1 (the central fibre), a5 (the central row and column) and a9 (entire 3x3 array)
+        eta_1_5_9    
+            The efficiency/throughput (eta = coupling * aperture loss) of the wave at the fibre plane with the fibre mode for a1 (the central fibre), a5 (the central row and column) and a9 (entire 3x3 array). 
+        """ 
+        # Initialise the resultant electric field (that will be the addition of each of the 9 micro-lenslets)
+        output_ef = np.zeros((npix, npix)) + 0j
         
-    Returns
-    -------
-    v: float
-        The v number of the fibre
+        # Initialise the displacement of each square from the centre
+        shift = int(self.width / dx)
         
-    """
-    v = 2 * np.pi / wavelength_in_mm * core_radius * numerical_aperture
-    return v
+        # Create the square window that will be used to represent the light getting into each micro-lenslet
+        square = utils.square(npix, self.width/dx) + 0j
+        curved_square = optics_tools.curved_wf(shift, dx, self.focal_length, wavelength_in_mm)
+        
+        # Variable to store the coupling for the central fibre (1), centre and horizontal/vertical fibres (5) and all, including diagonals (9)
+        coupling_1_to_9 = []
+        aperture_loss_1_to_9 = []
+        eta_1_5_9 = [0,0,0]
+        
+        # For each of the 9 microlenses 
+        for x in xrange(-1,2):
+            for y in xrange(-1,2):
+                # Shift the desired square to the centre
+                shifted_ef = np.roll(np.roll(input_ef, -shift*y, axis=1), -shift*x, axis=0)
+
+                # Apply the window and curved wavefront
+                curved_ef = curved_square * shifted_ef[(npix/2 - shift/2):(npix/2 + shift/2),(npix/2 - shift/2):(npix/2 + shift/2)]
+                
+                # [10] - Propagate the light passing through the microlens to the fibre
+                ef_at_fibre = optics_tools.propagate_by_fresnel(curved_ef, dx, distance_to_fibre, wavelength_in_mm)
+
+                # Add the resulting wavefront to a field containing the wavefronts of all 9 lenses
+                side = int(npix/2 - 1.5*shift)
+                output_ef[(side + shift*(x+1)):(side + shift*(x+2)), (side + shift*(y+1)):(side + shift*(y+2))] = ef_at_fibre
+            
+                # Compute the coupling, applying an offset to the fibre mode as required (To account for the outer fibres being off centre and displaced outwards)
+                coupling = optics_tools.compute_coupling(npix, dx, ef_at_fibre, self.width, fibre_mode, -offset*x, -offset*y)
+                coupling_1_to_9.append(coupling)
+                
+                # [11] - Compute aperture loss and eta
+                # Calculate aperture loss for the microlens by calculating the light that gets into the fibre (use a circular mask)
+                aperture_loss_fibre = np.sum(np.abs(ef_at_fibre)**2) / input_field
+                aperture_loss_1_to_9.append(aperture_loss_fibre)
+                
+                # Calculate and combine the eta for each set of lenses (1, 5, 9)
+                # 1 Fibre
+                if (x == 0) and (y == 0):
+                    eta_1_5_9[0] += coupling * aperture_loss_fibre
+                # 5 Fibres   
+                if not ((np.abs(x) == 1) and (np.abs(y) == 1)):
+                    eta_1_5_9[1] += coupling * aperture_loss_fibre               
+                # 9 Fibres
+                eta_1_5_9[2] += coupling * aperture_loss_fibre
+      
+        return output_ef, coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9
+
+class PIAAOptics(OpticalElement): 
+    """A set of PIAAOptics as an OpticalElement - two lenses separated by a known difference. Implements functions in piaa.py."""
     
-def shift_and_ft(im):
-    """Sub-pixel shift an image to the origin and Fourier-transform it
+    def __init__(self, alpha, r0, frac_to_focus, delta, dt, n_med, thickness, radius_in_mm, real_heights, dx, npix, wavelength_in_mm):
+        """Generates the phase aberrations introduced by each of a pair of PIAA lenses given the relevant parameters.
+        
+        Parameters
+        ----------
+        alpha: float
+            In the formula for I_1 - the exponent of the Gaussian intensity.
+        r0: float
+            The fractional radius of the telescope "secondary obstruction" in the 
+            annulus. e.g. for a 40% obstruction, this would be 0.4. 
+        frac_to_focus: float
+            The fraction (2nd surface z coord - 1st surface z coord)/
+                         (focus z coord       - 1st surface z coord)
+        delta: float
+            As the slope can not be infinite... delta describes
+            the radius of the annular dead zone in the second pupil. 
+        dt: float
+            Step size for integration.
+        n_med: float
+            Refractive index of the medium. This is used to compensate for the glass
+            (and give extra power to the new optic) as well as to estimate the height.
+        thickness: float
+            Physical thickness/distance between the realised PIAA lenses
+        radius_in_mm: float
+            Physical radius for realised PIAA lens
+        real_heights: Boolean
+            Does nothing at present...
+        dx: float
+            Resolution/sampling in um/pixel
+        npix: int
+            The number of pixels.
+        wavelength_in_mm: float
+            The wavelength of the light in mm.
+        """
+        # Store parameters
+        self.alpha = alpha
+        self.r0 = r0
+        self.frac_to_focus = frac_to_focus
+        self.delta = delta
+        self.dt = dt
+        self.n_med = n_med
+        self.thickness = thickness
+        self.radius_in_mm = radius_in_mm
+        self.real_heights = real_heights
+        self.dx = dx
+        self.npix = npix
+        self.wavelength_in_mm = wavelength_in_mm
+        
+        # Generate PIAA lenses #1 and #2
+        self.piaa_lens1, self.piaa_lens2 = piaa.create_piaa_lenses(self.alpha, self.r0, self.frac_to_focus, self.delta, self.dt, self.n_med, self.thickness, self.radius_in_mm, self.real_heights, self.dx, self.npix, self.wavelength_in_mm)
+    
+    def apply(self, input_ef):
+        """Applies the first PIAA lens to the incident wave, propagates the result to the second PIAA lens before applying it too.
 
-    Parameters
-    ----------
-    im: (ny,nx) float array
-    ftpix: optional ( (nphi) array, (nphi) array) of Fourier sampling points. 
-    If included, the mean square Fourier phase will be minimised.
+        Parameters
+        ----------
+        input_ef: np.array([[...]...])
+            2D square incident wave consisting of complex numbers.
+            
+        Return
+        ------
+        output_ef: np.array([[...]...])
+            The modified wave after application of the PIAA optics
+        """
+        # Pass the electric field through the first PIAA lens
+        ef_1 = input_ef * np.exp(1j * self.piaa_lens1) 
+        
+        # Propagate the electric field through glass to the second lens
+        ef_2 = optics_tools.propagate_by_fresnel(ef_1, self.dx, self.thickness / self.n_med, self.wavelength_in_mm)
+        
+        # Pass the electric field through the second PIAA lens
+        output_ef = ef_2 * np.exp(1j * self.piaa_lens2)
 
-    Returns
-    ----------
-    ftim: (ny,nx/2+1)  complex array
-    """
-    ny = im.shape[0]
-    nx = im.shape[1]
-    im = regrid_fft(im,(3*ny,3*nx))
-    shifts = np.unravel_index(im.argmax(), im.shape)
-    im = np.roll(np.roll(im,-shifts[0]+1,axis=0),-shifts[1]+1,axis=1)
-    im = rebin(im,(ny,nx))
-    ftim = np.fft.rfft2(im)
-    return ftim
-
-def rebin(a, shape):
-    """Re-bins an image to a new (smaller) image with summing	
-
-    Originally from:
-    http://stackoverflow.com/questions/8090229/resize-with-averaging-or-rebin-a-numpy-2d-array
-
-    Parameters
-    ----------
-    a: array
-        Input image
-    shape: (xshape,yshape)
-        New shape
-    """
-    sh = shape[0],a.shape[0]//shape[0],shape[1],a.shape[1]//shape[1]
-    return a.reshape(sh).sum(-1).sum(1)
-
-def regrid_fft(im,new_shape):
-    """Regrid onto a larger number of pixels using an fft. This is optimal
-    for Nyquist sampled data.
-
-    Parameters
-    ----------
-    im: array
-        The input image.
-    new_shape: (new_y,new_x)
-        The new shape
-
-    Notes
-    ------
-    TODO: This should work with an arbitrary number of dimensions
-    """
-    ftim = np.fft.rfft2(im)
-    new_ftim = np.zeros((new_shape[0], new_shape[1]/2 + 1),dtype='complex')
-    new_ftim[0:ftim.shape[0]/2,0:ftim.shape[1]] = \
-        ftim[0:ftim.shape[0]/2,0:ftim.shape[1]]
-    new_ftim[new_shape[0]-ftim.shape[0]/2:,0:ftim.shape[1]] = \
-        ftim[ftim.shape[0]/2:,0:ftim.shape[1]]
-    return np.fft.irfft2(new_ftim)
+        return output_ef    
