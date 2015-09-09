@@ -434,7 +434,7 @@ def rebin(a, shape):
     sh = shape[0],a.shape[0]//shape[0],shape[1],a.shape[1]//shape[1]
     return a.reshape(sh).sum(-1).sum(1)
 
-def calculate_tip_tilt(turbulent_wf, pupil, size):
+def correct_tip_tilt(turbulent_wf, pupil, size):
     """Given a turbulent wavefront, calculate the tip/tilt (horizontal and vertical slope)
     
     TODO: Only compute turbulence over square immediately surrounding the pupil to save on unnecessary computation
@@ -456,7 +456,7 @@ def calculate_tip_tilt(turbulent_wf, pupil, size):
     x = np.arange(size) - size/2
     xy = np.meshgrid(x, x)
     xtilt_func = xy[0]*pupil
-    ytilt_func = xy[0]*pupil
+    ytilt_func = xy[1]*pupil
     
     xtilt = np.sum(xtilt_func * turbulent_wf)/np.sum(xtilt_func**2)
     ytilt = np.sum(ytilt_func * turbulent_wf)/np.sum(ytilt_func**2)

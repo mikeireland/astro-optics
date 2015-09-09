@@ -117,7 +117,7 @@ class Feed:
 
         # Apply tip/tilt
         if use_tip_tilt:
-            turbulence = optics_tools.calculate_tip_tilt(turbulence, self.telescope_pupil, self.npix)
+            turbulence = optics_tools.correct_tip_tilt(turbulence, self.telescope_pupil, self.npix)
         
         # Apply effect of turbulence at telescope pupil (phase distortions)
         tef = optics_tools.apply_and_scale_turbulent_ef(turbulence, self.npix, self.wavelength_in_mm, self.dx, self.seeing_in_arcsec * self.telescope_magnification)

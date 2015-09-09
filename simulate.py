@@ -187,29 +187,30 @@ def plot_simulation_results(csv_path, image_path):
     iterations = results[0,9]
     
     # Construct a graph for each seeing value, a line for each alpha value and a point for each eta-dz pair
-    for dz in dz_values:
+    for n in number_of_fibres:
         pl.clf()
-        for n in number_of_fibres:
+        for a in alpha_values:
             seeing = []
             eta = []
             
             # Find the entries in results that match the given dz and alpha number of fibre
             for simulation in xrange(0, len(results)):
-                if (results[simulation, 2] == dz) and (results[simulation, 1] == n):
+                if (results[simulation, 4] == a) and (results[simulation, 1] == n):
                     seeing.append(results[simulation, 3])
                     eta.append(results[simulation, 0])
             # All matching simulations found, plot line
             e_sorted = [e for (s,e) in sorted(zip(seeing,eta))]
-            pl.plot(seeing_values,e_sorted, label=("# Fibres = " + str(int(n))))
+            pl.plot(seeing_values,e_sorted, label=("Alpha = " + str(int(a))))
             
         # All alphas plotted, apply labels/legend and save
         title = "Eta vs Seeing, " + str(int(iterations)) + " Iterations " 
-        details = "(dz = " + str(dz) + ", offset = " + str(offset) + ", PIAA = " + str(use_piaa) + ", Tip-Tilt = " + str(use_tip_tilt) + ", Stromlo Feed = " + str(stromlo_variables) + ")"
+        details = "(n = " + str(int(n)) + ", offset = " + str(offset) + ", PIAA = " + str(use_piaa) + ", Tip-Tilt = " + str(use_tip_tilt) + ", Stromlo Feed = " + str(stromlo_variables) + ")"
         pl.title(title + "\n" + details, fontsize=12)
         pl.xlabel("seeing (arcseconds)", fontsize=12)
-        pl.ylabel("eta (%)")
+        pl.ylabel("eta")
         pl.legend(prop={'size':10})
         pl.grid()
+        pl.ylim([0.0,1.0])
         pl.savefig( (image_path + title + details + ".png" ))     
 
 def construct_simulation_plots(save_path, results, offset, iterations=50, dz_values=[0.145,0.15,0.155], seeing_values=[0.0,0.25,0.5,0.75,1.0,1.25,1.5,1.75,2.0,2.25,2.5,2.75,3.0], alpha_values=[2.0], use_piaa=True, use_tip_tilt=True, number_of_fibres=[1,5,9]):
@@ -217,6 +218,8 @@ def construct_simulation_plots(save_path, results, offset, iterations=50, dz_val
     
     Constructs and saves plots of the output of piaa.simulate()
     Each plot is of dz (independent) vs eta (dependent) for a given seeing value, with lines of varying alpha being plotted
+    
+    TODO: Ensure y axis always is between 0.0 and 1.0, enabling side by side comparisons.
     
     Parameters
     ----------
@@ -262,7 +265,8 @@ def construct_simulation_plots(save_path, results, offset, iterations=50, dz_val
         details = "(dz = " + str(dz) + ", offset = " + str(offset) + ", PIAA = " + str(apply_piaa) + ", Tip/Tilt = " + str(use_tip_tilt) + ")"
         pl.title(title + "\n" + details, fontsize=12)
         pl.xlabel("seeing (arcseconds)", fontsize=12)
-        pl.ylabel("eta (%)")
+        pl.ylabel("eta")
         pl.legend(prop={'size':10})
         pl.grid()
+        #pl.ylim([0.0,1.0])
         pl.savefig( (save_path + title + details + ".png" ))     
