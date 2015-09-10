@@ -64,36 +64,44 @@ def simulate_for_x_iterations(dz, offset, seeing, alpha, use_piaa, use_tip_tilt,
     # Initialise Feed
     rhea_feed = feed.Feed(stromlo_variables, use_piaa)
     
-    while iterations > 0:
-        # Generate large turbulence patch
-        turbulence = optics_tools.kmf(npix * n)
+    # In imperfect seeing, there is a random element, necessitating multiple iterations
+    if seeing > 0.0: 
+        while iterations > 0:
+            # Generate large turbulence patch
+            turbulence = optics_tools.kmf(npix * n)
+            
+            for x in xrange(0,n):
+                for y in xrange(0,n):
+                    # Run for a single patch of turbulence
+                    turbulent_patch = turbulence[x*npix:((x+1)*npix),y*npix:((y+1)*npix)]
+                    coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9, electric_field, turbulence_out, tef = rhea_feed.propagate_to_fibre(dz, offset, turbulent_patch, seeing, alpha, use_tip_tilt)
+                    
+                    # Add
+                    eta_totals[0] += eta_1_5_9[0]
+                    eta_totals[1] += eta_1_5_9[1]
+                    eta_totals[2] += eta_1_5_9[2]
+                    
+                    # Decrement iterations
+                    iterations -= 1
+                    count += 1
+                    print count, " - ", dz, offset, seeing, alpha, use_piaa, use_tip_tilt, stromlo_variables, str(datetime.datetime.now().time())
         
-        for x in xrange(0,n):
-            for y in xrange(0,n):
-                # Run for a single patch of turbulence
-                turbulent_patch = turbulence[x*npix:((x+1)*npix),y*npix:((y+1)*npix)]
-                coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9, electric_field, turbulence_out, tef = rhea_feed.propagate_to_fibre(dz, offset, turbulent_patch, seeing, alpha, use_tip_tilt)
-                
-                # Add
-                eta_totals[0] += eta_1_5_9[0]
-                eta_totals[1] += eta_1_5_9[1]
-                eta_totals[2] += eta_1_5_9[2]
-                
-                # Decrement iterations
-                iterations -= 1
-                count += 1
-                print count, " - ", dz, offset, seeing, alpha, use_piaa, use_tip_tilt, stromlo_variables, str(datetime.datetime.now().time())
+        # All finished, compute average eta
+        eta_avg = [x / count for x in eta_totals]
     
-    # All finished, compute average eta
-    eta_avg = [x / count for x in eta_totals]
-    
+    # In perfect seeing, no need to iterate as there is no random element --> can run only once
+    else:
+        coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9, electric_field, turbulence_out, tef = rhea_feed.propagate_to_fibre(dz, offset, 1.0, seeing, alpha, use_tip_tilt)
+        eta_avg = eta_1_5_9
+        print dz, offset, seeing, alpha, use_piaa, use_tip_tilt, stromlo_variables, str(datetime.datetime.now().time())
+        
     output.put([eta_avg[0], 1, dz, seeing, alpha, float(use_piaa), float(use_tip_tilt), float(stromlo_variables), offset, count])
     output.put([eta_avg[1], 5, dz, seeing, alpha, float(use_piaa), float(use_tip_tilt), float(stromlo_variables), offset, count])
     output.put([eta_avg[2], 9, dz, seeing, alpha, float(use_piaa), float(use_tip_tilt), float(stromlo_variables), offset, count])
     
     return eta_avg
         
-def simulate(results_save_path, offset, iterations, dz_values, seeing_values=[0.0,0.25,0.5,0.75,1.0,1.25,1.5,1.75,2.0,2.25,2.5,2.75,3.0], use_piaa=True, use_tip_tilt=True, alpha_values=[2.0], stromlo_variables=True):
+def simulate(results_save_path, offset, iterations, max_running_processes, dz_values, seeing_values=[0.0,0.25,0.5,0.75,1.0,1.25,1.5,1.75,2.0,2.25,2.5,2.75,3.0], use_piaa=True, use_tip_tilt=True, alpha_values=[2.0], stromlo_variables=True):
     """Simulates fibre propagation for sets of dz, seeing and alpha parameters, averaging the resulting eta over a supplied number of iterations.
     
     Parameters
@@ -131,21 +139,34 @@ def simulate(results_save_path, offset, iterations, dz_values, seeing_values=[0.
     
     # For each set of dz-alpha-seeing, run for the given number of iterations
     for dz in dz_values:
-        for seeing in seeing_values:
-            for alpha in alpha_values:
+        for alpha in alpha_values:
+            for seeing in seeing_values:
                 # Construct processes
                 processes.append(mp.Process(target=simulate_for_x_iterations, args=(dz, offset, seeing, alpha, use_piaa, use_tip_tilt, stromlo_variables, iterations, output)))
-                
-    # Run processes
-    for p in processes:
-        p.start()
+    
+    # Limit the number of active processes at any one time
+    total_processes = len(processes)
+    finished_processes = 0
+    
+    while len(processes) > 0:
+        # Start a given number of processes
+        running_processes = []
         
-    # Exit the completed processes
-    for p in processes:
-        p.join()
+        for i in xrange(0, max_running_processes):
+            if len(processes) > 0:
+                running_processes.append(processes.pop())
+        
+        # Run processes
+        for p in running_processes:
+            p.start()
+            
+        # Exit the completed processes
+        for p in running_processes:
+            p.join()
+            finished_processes += 1
         
     # Get the results
-    for i in xrange(0, len(processes)*3):
+    for i in xrange(0, total_processes*3):
         simulation_results.append(output.get())
     
     try:
@@ -162,6 +183,8 @@ def simulate(results_save_path, offset, iterations, dz_values, seeing_values=[0.
 
 def plot_simulation_results(csv_path, image_path):
     """Loads simulation results from a csv file and plots corresponding graphs, pulling relevant information regarding the simulations from the file.
+    
+    TODO: Generalise to allow custom selection of x axis, y axis, legend variables and separate graph variables
     
     Parameters
     ----------

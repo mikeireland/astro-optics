@@ -14,6 +14,8 @@ import csv
 
 class Feed:
     """A class to model the behaviour of the RHEA fibre feed and simulate it in operation
+    
+    TODO: Make Feed the base class and RHEA Feed a specific instance of it
     """
     def __init__(self, stromlo_variables=True, use_piaa=True, use_microlens_array=True):
         """Constructs the class with the following list of default parameters.
@@ -77,33 +79,33 @@ class Feed:
         
         Parameters
         ----------
-    dz: float   
-        Free parameter, determines the magnification of the microlens array (changed to optimise coupling)
-    offset: int
-        The x/y distance that each of the outer fibres is off-centre in a radially outwards direction
-    seeing: float
-        The seeing for the telescope in arcseconds.
-    gaussian_alpha: float
-        Exponent constant from the Gaussian distribution achieved by the PIAA optics    
-    use_tip_tilt: boolean
-        Whether to apply Tip/Tilt correction to the incident wavefront
-        
-    Returns
-    -------
+        dz: float   
+            Free parameter, determines the magnification of the microlens array (changed to optimise coupling)
+        offset: int
+            The x/y distance that each of the outer fibres is off-centre in a radially outwards direction
+        seeing: float
+            The seeing for the telescope in arcseconds.
+        gaussian_alpha: float
+            Exponent constant from the Gaussian distribution achieved by the PIAA optics    
+        use_tip_tilt: boolean
+            Whether to apply Tip/Tilt correction to the incident wavefront
+            
+        Returns
+        -------
 
-    coupling_1_to_9: [float, float, float]
-        The coupling of the wave at the fibre plane with the fibre mode for c1 (the central fibre), c5 (the central row and column) and c9 (entire 3x3 array)
-    aperture_loss_1_to_9
-        The aperture loss of the wave at the fibre plane with the fibre mode for a1 (the central fibre), a5 (the central row and column) and a9 (entire 3x3 array)
-    eta_1_5_9    
-        The efficiency/throughput (eta = coupling * aperture loss) of the wave at the fibre plane with the fibre mode for a1 (the central fibre), a5 (the central row and column) and a9 (entire 3x3 array).  
-    electric_field: np.array([[[...]...]...])
-        Array of the electric field at various points throughout the length of the feed.
-    turbulence: np.array([[...]...])
-        The turbulence that was applied to the wave initially, which may or may not be Tip/Tilt corrected
-    tef: np.array([[...]...])
-        The phase aberrations introduced by the turbulence
-    """
+        coupling_1_to_9: [float, float, float]
+            The coupling of the wave at the fibre plane with the fibre mode for c1 (the central fibre), c5 (the central row and column) and c9 (entire 3x3 array)
+        aperture_loss_1_to_9
+            The aperture loss of the wave at the fibre plane with the fibre mode for a1 (the central fibre), a5 (the central row and column) and a9 (entire 3x3 array)
+        eta_1_5_9    
+            The efficiency/throughput (eta = coupling * aperture loss) of the wave at the fibre plane with the fibre mode for a1 (the central fibre), a5 (the central row and column) and a9 (entire 3x3 array).  
+        electric_field: np.array([[[...]...]...])
+            Array of the electric field at various points throughout the length of the feed.
+        turbulence: np.array([[...]...])
+            The turbulence that was applied to the wave initially, which may or may not be Tip/Tilt corrected
+        tef: np.array([[...]...])
+            The phase aberrations introduced by the turbulence
+        """
         # Initialise seeing and alpha
         self.seeing_in_arcsec = seeing
         self.alpha = alpha
@@ -115,8 +117,8 @@ class Feed:
         electric_field= []
         electric_field.append(self.telescope_pupil)
 
-        # Apply tip/tilt
-        if use_tip_tilt:
+        # Apply tip/tilt (Only if seeing > 0.0)
+        if use_tip_tilt and seeing > 0.0:
             turbulence = optics_tools.correct_tip_tilt(turbulence, self.telescope_pupil, self.npix)
         
         # Apply effect of turbulence at telescope pupil (phase distortions)
@@ -158,13 +160,13 @@ class Feed:
         # All finished, return
         return coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9, electric_field, turbulence, tef
 
-def test(seeing,  use_piaa=True, use_tip_tilt=True):
+def test(dz=0.152, offset=84, seeing=0.0, alpha=2.0, use_piaa=True, use_tip_tilt=True):
     """Method testing the functionality of propagate_to_fibre"""
     tm = []
     tm.append( (time.time(), "Start") )
     turbulence = optics_tools.kmf(2048)
     rhea_feed = Feed(use_piaa=use_piaa)
-    c, a, eta, ef, t, tef = rhea_feed.propagate_to_fibre(0.152, 84, turbulence, seeing=seeing, use_tip_tilt=use_tip_tilt)
+    c, a, eta, ef, t, tef = rhea_feed.propagate_to_fibre(dz, offset, turbulence, seeing=seeing, alpha=alpha, use_tip_tilt=use_tip_tilt)
     tm.append( (time.time(), "End") )
     print "Total time: ", tm[-1][0] - tm[0][0] 
-    return c, a, eta, ef, turbulence, t, tef
+    return c, a, eta, ef, t, tef
