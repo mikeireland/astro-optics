@@ -181,7 +181,7 @@ def simulate(results_save_path, offset, iterations, max_running_processes, dz_va
         
     return simulation_results    
 
-def plot_simulation_results(csv_path, image_path):
+def plot_simulation_results(csv_path, image_path, independent_var, legend_var, graph_var, find_max=False):
     """Loads simulation results from a csv file and plots corresponding graphs, pulling relevant information regarding the simulations from the file.
     
     TODO: Generalise to allow custom selection of x axis, y axis, legend variables and separate graph variables
@@ -198,7 +198,7 @@ def plot_simulation_results(csv_path, image_path):
     results = np.loadtxt(open(csv_path, "rb"), delimiter=",",skiprows=1)
     
     # Reconstruct the simulation information
-    number_of_fibres = np.sort(np.unique(results[:,1]))
+    number_of_fibres = [int(i) for i in np.sort(np.unique(results[:,1]))]
     dz_values = np.sort(np.unique(results[:,2]))
     seeing_values = np.sort(np.unique(results[:,3]))
     alpha_values = np.sort(np.unique(results[:,4]))
@@ -209,87 +209,46 @@ def plot_simulation_results(csv_path, image_path):
     offset = results[0,8]
     iterations = results[0,9]
     
+    # Use dictionary to map variables to strings for customisation
+    parameters = {}
+    parameters["fibres"] = [number_of_fibres, 1]
+    parameters["dz"] = [dz_values, 2]
+    parameters["seeing"] = [seeing_values, 3]
+    parameters["alpha"] = [alpha_values, 4]
+    
+    x_vals = parameters[independent_var]
+    L_vals = parameters[legend_var]
+    g_vals = parameters[graph_var]
+    
     # Construct a graph for each seeing value, a line for each alpha value and a point for each eta-dz pair
-    for n in number_of_fibres:
+    for g in g_vals[0]:
         pl.clf()
-        for a in alpha_values:
-            seeing = []
+        for L in L_vals[0]:
+            x = []
             eta = []
             
             # Find the entries in results that match the given dz and alpha number of fibre
             for simulation in xrange(0, len(results)):
-                if (results[simulation, 4] == a) and (results[simulation, 1] == n):
-                    seeing.append(results[simulation, 3])
+                if (results[simulation, L_vals[1]] == L) and (results[simulation, g_vals[1]] == g):
+                    x.append(results[simulation, x_vals[1]])
                     eta.append(results[simulation, 0])
             # All matching simulations found, plot line
-            e_sorted = [e for (s,e) in sorted(zip(seeing,eta))]
-            pl.plot(seeing_values,e_sorted, label=("Alpha = " + str(int(a))))
+            e_sorted = [e for (xx,e) in sorted(zip(x,eta))]
+            pl.plot(x_vals[0], e_sorted, label=(legend_var + " = " + str(L)))
+            
+            # Used to optimise over a given variable (namely dz) to find where eta is maximised
+            if find_max:
+                max_eta = max(e_sorted)
+                i = e_sorted.index(max_eta)
+                print L, "-", x_vals[0][i], "(" + str(int(g)) + ")"
             
         # All alphas plotted, apply labels/legend and save
-        title = "Eta vs Seeing, " + str(int(iterations)) + " Iterations " 
-        details = "(n = " + str(int(n)) + ", offset = " + str(offset) + ", PIAA = " + str(use_piaa) + ", Tip-Tilt = " + str(use_tip_tilt) + ", Stromlo Feed = " + str(stromlo_variables) + ")"
+        title = "Simulation of Eta vs " + independent_var + ", " + str(int(iterations)) + " Iterations " 
+        details = "(" + graph_var + " = " + str(g) + ", offset = " + str(offset) + ", PIAA = " + str(use_piaa) + ", Tip-Tilt = " + str(use_tip_tilt) + ", Stromlo Feed = " + str(stromlo_variables) + ")"
         pl.title(title + "\n" + details, fontsize=12)
-        pl.xlabel("seeing (arcseconds)", fontsize=12)
-        pl.ylabel("eta")
-        pl.legend(prop={'size':10})
-        pl.grid()
-        pl.ylim([0.0,1.0])
-        pl.savefig( (image_path + title + details + ".png" ))     
-
-def construct_simulation_plots(save_path, results, offset, iterations=50, dz_values=[0.145,0.15,0.155], seeing_values=[0.0,0.25,0.5,0.75,1.0,1.25,1.5,1.75,2.0,2.25,2.5,2.75,3.0], alpha_values=[2.0], use_piaa=True, use_tip_tilt=True, number_of_fibres=[1,5,9]):
-    """Older, more clunky plotting method. Can plot straight from an array, rather than reading in a csv.
-    
-    Constructs and saves plots of the output of piaa.simulate()
-    Each plot is of dz (independent) vs eta (dependent) for a given seeing value, with lines of varying alpha being plotted
-    
-    TODO: Ensure y axis always is between 0.0 and 1.0, enabling side by side comparisons.
-    
-    Parameters
-    ----------
-    save_path: string  
-        The path to save the plots to, ending with //
-    results: 2D list
-        The result and parameters for each simulation: [eta, dz, seeing, alpha]
-    offset: int
-        The x/y distance that each of the outer fibres is off-centre by in an outwards direction
-    iterations: int
-        The number of times to run each simulation in order to average out the effects of turbulence
-    dz_values: [float]
-        The list of dz values to simulate.
-    seeing_values: [float]
-        The list of seeing values to simulate.
-    alpha_values: [float]
-        The list of alpha values to simulate.    
-    apply_piaa: boolean
-        Whether to apply the PIAA lenses or not            
-    use_circular_lenslet: boolean
-        Whether to use a singlr circular lens instead of the square microlens array
-    """
-    # Make sure the results array is in the correct format
-    results = np.array(results[1:][:])
-    
-    # Construct a graph for each seeing value, a line for each alpha value and a point for each eta-dz pair
-    for dz in dz_values:
-        pl.clf()
-        for n in number_of_fibres:
-            seeing = []
-            eta = []
-            
-            # Find the entries in results that match the given dz and alpha number of fibre
-            for simulation in xrange(0, len(results)):
-                if (results[simulation, 2] == dz) and (results[simulation, 1] == n):
-                    seeing.append(results[simulation, 3])
-                    eta.append(results[simulation, 0])
-            # All matching simulations found, plot line
-            pl.plot(seeing,eta, label=("# Fibres = " + str(n)))
-            
-        # All alphas plotted, apply labels/legend and save
-        title = "Eta as a Function of Seeing, Averaged Over " + str(iterations) + " Iterations " 
-        details = "(dz = " + str(dz) + ", offset = " + str(offset) + ", PIAA = " + str(apply_piaa) + ", Tip/Tilt = " + str(use_tip_tilt) + ")"
-        pl.title(title + "\n" + details, fontsize=12)
-        pl.xlabel("seeing (arcseconds)", fontsize=12)
-        pl.ylabel("eta")
-        pl.legend(prop={'size':10})
+        pl.xlabel(independent_var, fontsize=12)
+        pl.ylabel(r'$\eta$')
+        pl.legend(prop={'size':10}, loc='lower right')
         pl.grid()
         #pl.ylim([0.0,1.0])
-        pl.savefig( (save_path + title + details + ".png" ))     
+        pl.savefig( (image_path + title + details + ".png" ))        
