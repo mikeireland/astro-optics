@@ -22,7 +22,6 @@ class Feed:
         """        
         self.alpha = 2.0                         # Gaussian exponent term
         self.r0 = 0.40                           # Fractional size of secondary mirror/obstruction
-        self.frac_to_focus = 1e-6                # Fraction (z_s2 - z_s1)/(z_f - z_s1)
         self.delta = 1e-2                        # Radius of annular dead zone for second pupil
         self.dt = 1e-3                           # Integration step size
         self.n_med = 1.5                         # Refraction index of the medium
@@ -40,6 +39,9 @@ class Feed:
         self.lenslet_width = 1.0                 # Width of the square lenslet in mm
         self.numerical_aperture = 0.13           # Numerical aperture of the optical fibre 
         self.mode = None
+        
+        #self.frac_to_focus = 1e-6                # Fraction (z_s2 - z_s1)/(z_f - z_s1)
+        self.frac_to_focus = self.thickness / self.n_med / (self.thickness / self.n_med + self.focal_length_1)
         
         # Stromlo/Subaru value set
         if stromlo_variables:
@@ -125,13 +127,13 @@ class Feed:
         tef = optics_tools.apply_and_scale_turbulent_ef(turbulence, self.npix, self.wavelength_in_mm, self.dx, self.seeing_in_arcsec * self.telescope_magnification)
         electric_field.append( (self.telescope_pupil * tef) )
         
+        # Apply Lens #1
+        electric_field.append( self.lens_1.apply(electric_field[-1], self.npix, self.dx, self.wavelength_in_mm) )     
+        
         # Apply PIAA
         if self.use_piaa:
             electric_field.append( self.piaa_optics.apply(electric_field[-1]) )
-        
-        # Apply Lens #1
-        electric_field.append( self.lens_1.apply(electric_field[-1], self.npix, self.dx, self.wavelength_in_mm) )
-        
+
         # Propagate to lens #2
         distance_to_lens = self.focal_length_1 + self.focal_length_2 + dz
         electric_field.append( optics_tools.propagate_by_fresnel(electric_field[-1], self.dx, distance_to_lens, self.wavelength_in_mm) )

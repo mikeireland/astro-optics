@@ -105,15 +105,15 @@ def s_annulus_gauss(alpha,r0,frac_to_focus,delta=1e-2,dt=1e-3, n_med=1.5, thickn
     (r_surface,surface1,surface2,r_slope,slope_1,slope_2): float arrays
         um is the radial
     """
-    #Set up an "integrator" to integrate the differential equation defined by ds_annulus_gauss (thus obtaining s in terms of r)
+    # Set up an "integrator" to integrate the differential equation defined by ds_annulus_gauss (thus obtaining s in terms of r)
     s_integrator = integrate.ode(ds_annulus_gauss).set_integrator('vode', method='bdf', with_jacobian=False)
     
-    #At the inner edge of the annulus (r = r0), the slope is -r0 + delta. 
+    # At the inner edge of the annulus (r = r0), the slope is -r0 + delta. 
     s_integrator.set_initial_value(-r0 + delta, r0).set_f_params( alpha,r0 )
     
-    #By Mike's conventional shorthand, rs is and array of r values, and
+    # By Mike's conventional shorthand, rs is and array of r values, and
     rs = np.array([])
-    #ss is an array of s values.
+    # ss is an array of s values.
     ss = np.array([])
     
     # Integrate ds/dr to find values of s and r
@@ -125,15 +125,18 @@ def s_annulus_gauss(alpha,r0,frac_to_focus,delta=1e-2,dt=1e-3, n_med=1.5, thickn
     # Create an array of u's of the same size and spacing as the r values    
     us = np.linspace(0,1,1.0/dt + 1)
     
-    #The slope at the 2nd surface is "v", which is something that un-does the slope "s".
-    #Interpolate v from u (r + s) and -s values
+    # The slope at the 2nd surface is "v", which is something that un-does the slope "s".
+    # Interpolate v from u (r + s) and -s values
     vs = np.interp(us,rs + ss,-ss,left=np.nan, right=0)
     
-    #Now fill in the remaining slopes in a smooth way.
     ss_full = np.interp(us,rs,ss, left=np.nan, right=0)
+    
+    # Now fill in the remaining slopes in a smooth way 
+    # Replace 'nan' entries at the start of vs and ss_full with evenly spaced values extrapolated from the first non-'nan' value
     wbad = np.where(vs != vs)[0]
     wgood = np.where(vs == vs)[0]
     vs[wbad] = vs[wgood[0]]*np.arange(wgood[0])/wgood[0]
+    
     wbad = np.where(ss_full != ss_full)[0]
     wgood = np.where(ss_full == ss_full)[0]
     ss_full[wbad] = ss_full[wgood[0]]*np.arange(wgood[0])/wgood[0]

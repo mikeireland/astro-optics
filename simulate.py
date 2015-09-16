@@ -248,7 +248,7 @@ def plot_simulation_results(csv_path, image_path, independent_var, legend_var, g
         pl.title(title + "\n" + details, fontsize=12)
         pl.xlabel(independent_var, fontsize=12)
         pl.ylabel(r'$\eta$')
-        pl.legend(prop={'size':10}, loc='lower right')
+        pl.legend(prop={'size':10}, loc='upper right')
         pl.grid()
         #pl.ylim([0.0,1.0])
         pl.savefig( (image_path + title + details + ".png" ))        
