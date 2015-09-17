@@ -32,16 +32,16 @@ class Feed:
         self.real_heights = True                 # ...
         self.dx = 2.0/1000.0                     # Resolution/sampling in mm/pixel
         self.npix = 2048                         # Number of pixels for the simulation
-        self.focal_length_1 = 94                 # Focal length of wavefront after PIAA lens #2
+        self.focal_length_1 = 94                 # Focal length of wavefront before PIAA lens #1
         self.focal_length_2 = 3.02               # Focal length of 3.02mm lens
         self.focal_length_3 = 4.64               # Focal length of 4.64mm square lenslet
-        self.circular_lens_diameter = 1.0        # Diameter of the 3.02mm circular lens
+        self.circular_lens_diameter = 0.8        # Diameter of the 3.02mm circular lens. Maybe make it small due to glue etc? Should be 1mm
         self.lenslet_width = 1.0                 # Width of the square lenslet in mm
         self.numerical_aperture = 0.13           # Numerical aperture of the optical fibre 
         self.mode = None
         
         #self.frac_to_focus = 1e-6                # Fraction (z_s2 - z_s1)/(z_f - z_s1)
-        self.frac_to_focus = self.thickness / self.n_med / (self.thickness / self.n_med + self.focal_length_1)
+        self.frac_to_focus = self.thickness / self.focal_length_1
         
         # Stromlo/Subaru value set
         if stromlo_variables:
@@ -135,7 +135,7 @@ class Feed:
             electric_field.append( self.piaa_optics.apply(electric_field[-1]) )
 
         # Propagate to lens #2
-        distance_to_lens = self.focal_length_1 + self.focal_length_2 + dz
+        distance_to_lens = self.focal_length_1 - self.thickness + self.focal_length_2 + dz
         electric_field.append( optics_tools.propagate_by_fresnel(electric_field[-1], self.dx, distance_to_lens, self.wavelength_in_mm) )
         
         # Apply Lens #2
