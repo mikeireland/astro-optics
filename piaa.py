@@ -9,7 +9,7 @@ Adam Rains
 """
 
 import numpy as np
-import optics_tools
+import opticstools as optics_tools
 import pdb
 from scipy import integrate
 from scipy import interpolate

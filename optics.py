@@ -7,9 +7,9 @@ Adam Rains
 """
 
 import numpy as np
-import optics_tools
+import opticstools as optics_tools
+import opticstools.utils as utils
 import piaa
-import utils
 
 class OpticalElement:
     """The base class for all optical elements."""
@@ -285,33 +285,3 @@ class PIAAOptics(OpticalElement):
 
         return output_ef    
         
-def nglass(l, glass='sio2'):
-    """Refractive index of fused silica and other glasses. Note that C is
-    in microns^{-2}
-    
-    Parameters
-    ----------
-    l: wavelength 
-    """
-    try:
-        nl = len(l)
-    except:
-        l = [l]
-        nl=1
-    l = np.array(l)
-    if (glass == 'sio2'):
-        B = np.array([0.696166300, 0.407942600, 0.897479400])
-        C = np.array([4.67914826e-3,1.35120631e-2,97.9340025])
-    elif (glass == 'bk7'):
-        B = np.array([1.03961212,0.231792344,1.01046945])
-        C = np.array([6.00069867e-3,2.00179144e-2,1.03560653e2])
-    elif (glass == 'nf2'):
-        B = np.array( [1.39757037,1.59201403e-1,1.26865430])
-        C = np.array( [9.95906143e-3,5.46931752e-2,1.19248346e2])
-    else:
-        print("ERROR: Unknown glass {0:s}".format(glass))
-        raise UserWarning
-    n = np.ones(nl)
-    for i in range(len(B)):
-            n += B[i]*l**2/(l**2 - C[i])
-    return np.sqrt(n)

@@ -5,8 +5,8 @@ Adam Rains
 """
 import numpy as np
 import optics
-import optics_tools
-import utils
+import opticstools as optics_tools
+import opticstools.utils as utils
 import pylab as pl
 import time
 import multiprocessing as mp
