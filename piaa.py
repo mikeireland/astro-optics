@@ -143,19 +143,22 @@ def s_annulus_gauss(alpha,r0,frac_to_focus,delta=1e-2,dt=1e-3, n_med=1.5, thickn
     wgood = np.where(ss_full == ss_full)[0]
     ss_full[wbad] = ss_full[wgood[0]]*np.arange(wgood[0])/wgood[0]
     
-    #Inserting a glass section frac_to_focus thick changes the target 
-    #focus position behind the second surface from 
-    #(1.0-frac_to_focus)/frac_to_focus to 
-    #(1.0-frac_to_focus/frac_to_focus) + (n_med-1)
-    power1 = frac_to_focus/(1.0-frac_to_focus) - 1.0/( (1.0-frac_to_focus)/frac_to_focus + (n_med-1.0))
+
     
     #Also integrate the slopes. For surface 1, un-do the convergence that we would have had
     #on the way to focus...
     s1 = integrate.cumtrapz(ss_full + frac_to_focus*us,us)
+    
     #Now we need to restore the converging beam. This just means adding a curvature that 
     #gives us a focal length of (1-frac_to_focus)/frac_to_focus
-    #s2 = integrate.cumtrapz(vs - (frac_to_focus/(1-frac_to_focus) + power1)*us,us)
     s2 = integrate.cumtrapz(vs - frac_to_focus/(1-frac_to_focus)*us,us)
+    
+    #Inserting a glass section frac_to_focus thick changes the target 
+    #focus position behind the second surface from 
+    #(1.0-frac_to_focus)/frac_to_focus to 
+    #(1.0-frac_to_focus/frac_to_focus) + (n_med-1)
+    #power1 = frac_to_focus/(1.0-frac_to_focus) - 1.0/( (1.0-frac_to_focus)/frac_to_focus + (n_med-1.0))
+    #s2 = integrate.cumtrapz(vs - (frac_to_focus/(1-frac_to_focus) + power1)*us,us)
     
     #Convert to real heights
     s1 *= radius_in_mm/(thickness/n_med) / (n_med - 1)
