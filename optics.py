@@ -284,4 +284,3 @@ class PIAAOptics(OpticalElement):
         output_ef = ef_2 * np.exp(1j * self.piaa_lens2)
 
         return output_ef    
-        
