@@ -31,7 +31,7 @@ class Feed:
         self.seeing_in_arcsec = 1.0              #Seeing in arcseconds before magnification
         self.real_heights = True                 # ...
         self.dx = 2.0/1000.0                     # Resolution/sampling in mm/pixel
-        self.npix = 4096                         # Number of pixels for the simulation
+        self.npix = 2048                         # Number of pixels for the simulation
         self.focal_length_1 = 94                 # Focal length of wavefront before PIAA lens #1
         self.focal_length_2 = 3.02               # Focal length of 3.02mm lens
         self.focal_length_3 = 4.64               # Focal length of 4.64mm square lenslet
@@ -41,7 +41,8 @@ class Feed:
         self.mode = None
         
         #self.frac_to_focus = 1e-6                # Fraction (z_s2 - z_s1)/(z_f - z_s1)
-        self.frac_to_focus = n * self.thickness / (self.thickness + self.focal_length_1)
+#        self.frac_to_focus = n * self.thickness / (self.thickness + self.focal_length_1)
+        self.frac_to_focus = n * self.thickness / self.focal_length_1
         
         # Stromlo/Subaru value set
         if stromlo_variables:
