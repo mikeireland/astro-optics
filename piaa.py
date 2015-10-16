@@ -105,7 +105,7 @@ def s_annulus_gauss(alpha,r0,frac_to_focus,delta=1e-2,dt=1e-3, n_med=1.5, thickn
     Returns
     -------
     (r_surface,surface1,surface2,r_slope,slope_1,slope_2): float arrays
-        um is the radial
+        TODO: Fill out for each return variable
     """
     # Set up an "integrator" to integrate the differential equation defined by ds_annulus_gauss (thus obtaining s in terms of r)
     s_integrator = integrate.ode(ds_annulus_gauss).set_integrator('vode', method='bdf', with_jacobian=False)
@@ -167,15 +167,8 @@ def s_annulus_gauss(alpha,r0,frac_to_focus,delta=1e-2,dt=1e-3, n_med=1.5, thickn
         s2 *= radius_in_mm**2/thickness/(n_med-1.0)
     else:
         s2 = integrate.cumtrapz(vs - frac_to_focus/(1-frac_to_focus)*us,us)
-    
-    #Inserting a glass section frac_to_focus thick changes the target 
-    #focus position behind the second surface from 
-    #(1.0-frac_to_focus)/frac_to_focus to 
-    #(1.0-frac_to_focus/frac_to_focus) + (n_med-1)
-    #power1 = frac_to_focus/(1.0-frac_to_focus) - 1.0/( (1.0-frac_to_focus)/frac_to_focus + (n_med-1.0))
-    #s2 = integrate.cumtrapz(vs - (frac_to_focus/(1-frac_to_focus) + power1)*us,us)
 
-    return 0.5*(us[1:]+us[:-1]), s1,s2,us,ss_full, vs
+    return 0.5*(us[1:]+us[:-1]), s1, s2, us, ss_full, vs
     
 def create_piaa_lenses(alpha, r0, frac_to_focus, delta, dt, n_med, thickness, radius_in_mm, real_heights, dx, npix, wavelength_in_mm):
     """Constructs a pair of PIAA lenses given the relevant parameters.

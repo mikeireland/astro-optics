@@ -17,7 +17,7 @@ class Feed:
     
     TODO: Make Feed the base class and RHEA Feed a specific instance of it
     """
-    def __init__(self, stromlo_variables=True, use_piaa=True, use_microlens_array=True, n=1.0):
+    def __init__(self, stromlo_variables=True, use_piaa=True, use_microlens_array=True):
         """Constructs the class with the following list of default parameters.
         """        
         self.alpha = 2.0                         # Gaussian exponent term
@@ -39,10 +39,7 @@ class Feed:
         self.lenslet_width = 1.0                 # Width of the square lenslet in mm
         self.numerical_aperture = 0.13           # Numerical aperture of the optical fibre 
         self.mode = None
-        
-        #self.frac_to_focus = 1e-6                # Fraction (z_s2 - z_s1)/(z_f - z_s1)
-#        self.frac_to_focus = n * self.thickness / (self.thickness + self.focal_length_1)
-        self.frac_to_focus = n * self.thickness / self.focal_length_1
+        self.frac_to_focus = self.thickness / self.focal_length_1
         
         # Stromlo/Subaru value set
         if stromlo_variables:
@@ -141,30 +138,11 @@ class Feed:
         # Propagate to lens #2
         electric_field.append( optics_tools.propagate_by_fresnel(electric_field[-1], self.dx, distance_to_lens, self.wavelength_in_mm) )
         
-        """
-        distance_step = 1.0
-        remaining_distance_to_lens = distance_to_lens
-        file_number = 0
-        while remaining_distance_to_lens > 0:
-            # Propagate the field by the distance step (or the distance remaining if it is smaller than the step)
-            if remaining_distance_to_lens > distance_step:
-                electric_field[-1] = optics_tools.propagate_by_fresnel(electric_field[-1], self.dx, distance_step, self.wavelength_in_mm)
-                remaining_distance_to_lens -= distance_step   
-            else:
-                electric_field[-1] = optics_tools.propagate_by_fresnel(electric_field[-1], self.dx, remaining_distance_to_lens, self.wavelength_in_mm)
-                remaining_distance_to_lens = 0
-            
-            # Save the plot at each step
-            title = str(distance_to_lens - remaining_distance_to_lens) + ' of ' + str(distance_to_lens) + " mm from 3.02mm Lens After PIAA Lens #2"
-            utils.save_plot(np.abs(electric_field[-1])**0.5, title, "C:\\Users\\Adam Rains\\Dropbox\\University\\2015\\ASTR8010\\Code\\astro-optics\\Saves\\Layout\\", ("%05d" % file_number))
-            file_number += 1  
-        """ 
         # Apply Lens #2
         electric_field.append( self.lens_2.apply(electric_field[-1], self.npix, self.dx, self.wavelength_in_mm) )
         
         # Propagate to microlens array
         distance_to_microlens_array = 1 / ( 1/self.focal_length_2 - 1/(self.focal_length_2 + dz) ) #-30.0 #From thin lens formula
-        print distance_to_microlens_array
         electric_field.append( optics_tools.propagate_by_fresnel(electric_field[-1], self.dx, distance_to_microlens_array, self.wavelength_in_mm) )
               
         # Interpolate by 2x and update dx for future use
@@ -172,8 +150,8 @@ class Feed:
         new_dx =  self.dx / 2.0
         new_npix = self.npix * 2.0
         
-        # For the purpose of having an image of the light at the lenslet
-        electric_field.append( self.microlens_array.apply( electric_field[-1], new_npix, new_dx, self.wavelength_in_mm) )
+        # For the purpose of having an image of the light at the lenslet (This presently notably slows down the code though)
+        #electric_field.append( self.microlens_array.apply( electric_field[-1], new_npix, new_dx, self.wavelength_in_mm) )
         
         # Compute Fibre mode
         self.fibre_mode = optics_tools.calculate_fibre_mode(self.wavelength_in_mm, self.fibre_core_radius, self.numerical_aperture, new_npix, new_dx)
@@ -181,13 +159,13 @@ class Feed:
         # Apply microlens array, propagate to fibre and compute coupling
         distance_to_fibre = 1.0/(1.0/self.focal_length_3 - 1.0/(distance_to_microlens_array - self.focal_length_2))
         input_field = np.sum(np.abs(electric_field[0])**2)
-        ef_at_fibre, coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9 = self.microlens_array.apply_propagate_and_couple(electric_field[-2], new_npix, new_dx, self.wavelength_in_mm, distance_to_fibre, input_field, offset, self.fibre_mode)
+        ef_at_fibre, coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9 = self.microlens_array.apply_propagate_and_couple(electric_field[-1], new_npix, new_dx, self.wavelength_in_mm, distance_to_fibre, input_field, offset, self.fibre_mode)
         electric_field.append(ef_at_fibre)
         
         # All finished, return
         return coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9, electric_field, turbulence, tef
 
-def test(dz=0.152, offset=84, seeing=0.0, alpha=2.0, use_piaa=True, use_tip_tilt=True, n=1.0):
+def test(dz=0.152, offset=84, seeing=0.0, alpha=2.0, use_piaa=True, use_tip_tilt=True):
     """Method testing the functionality of propagate_to_fibre"""
     tm = []
     tm.append( (time.time(), "Start") )
