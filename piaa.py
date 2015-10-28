@@ -1,7 +1,9 @@
-"""This function models Phase Induced Amplitude Apodization (PIAA), a beam shaping technique.
+"""This function models Phase Induced Amplitude Apodization (PIAA), a beam 
+shaping technique.
 
-PIAA is the technique of apodizing a pupil without loss, so that the beam better matches e.g. a coronagraph or a fibre input.
-This module contains a collection of routines to help with PIAA calculations.
+PIAA is the technique of apodizing a pupil without loss, so that the beam better 
+matches e.g. a coronagraph or a fibre input. This module contains a collection 
+of routines to help with PIAA calculations.
 
 Authors:
 Dr Michael Ireland
@@ -65,16 +67,17 @@ def ds_annulus_gauss(r, s, alpha, r0):
     # s'(r) = ds/dr
     ds_dr = (I_0 / I_1) * r / (r + s)  -  1
     
-    # Alternatively, in full (results in *very* slightly different result, on the order of 10^-13)
-    # (1 - np.exp(-alpha)) * np.exp(alpha*(r + s)**2) * r / alpha / (1-r0**2) / (r+s) - 1
+    # In full (*very* slightly different result, on the order of 10^-13)
+    # (1 - np.exp(-alpha))*np.exp(alpha*(r + s)**2)*r/alpha/(1-r0**2)/(r+s) - 1
     
     return ds_dr
     
-def s_annulus_gauss(alpha,r0,frac_to_focus,delta=1e-2,dt=1e-3, n_med=1.5, thickness=15.0, radius_in_mm=1.0, real_heights=True):
+def s_annulus_gauss(alpha, r0, frac_to_focus, n_med, thickness, radius_in_mm, 
+                    real_heights=True):
     """Everything is scaled so that a slope of 1 unit corresponds to an angle
-    of 1 radius per length. To convert to real units of slope, this has to be multiplied
-    by (radius/(thickness / n_med)). To convert to real heights, we then have to divide 
-    by (n-1).
+    of 1 radius per length. To convert to real units of slope, this has to be 
+    multiplied by (radius/(thickness / n_med)). To convert to real heights, we 
+    then have to divide by (n-1).
     
     Parameters
     ----------
@@ -86,16 +89,11 @@ def s_annulus_gauss(alpha,r0,frac_to_focus,delta=1e-2,dt=1e-3, n_med=1.5, thickn
     frac_to_focus: float
         The fraction (2nd surface z coord - 1st surface z coord)/
                      (focus z coord       - 1st surface z coord)
-        The idea of this variable is that the PIAA should be able to be placed in the
-        optical train and not change the position of the first lens focus.
-    delta: float
-        As the slope can not be infinite... delta describes
-        the radius of the annular dead zone in the second pupil. 
-    dt: float
-        Step size for integration.
+        The idea of this variable is that the PIAA should be able to be placed 
+        in the optical train and not change the position of the first lens focus
     n_med: float
         Refractive index of the medium. This is used to compensate for the glass
-        (and give extra power to the new optic) as well as to estimate the height.
+        and give extra power to the new optic as well as to estimate the height.
     thickness: float
         Physical thickness/distance between the realised PIAA lenses
     radius_in_mm: float
@@ -107,8 +105,14 @@ def s_annulus_gauss(alpha,r0,frac_to_focus,delta=1e-2,dt=1e-3, n_med=1.5, thickn
     (r_surface,surface1,surface2,r_slope,slope_1,slope_2): float arrays
         TODO: Fill out for each return variable
     """
-    # Set up an "integrator" to integrate the differential equation defined by ds_annulus_gauss (thus obtaining s in terms of r)
-    s_integrator = integrate.ode(ds_annulus_gauss).set_integrator('vode', method='bdf', with_jacobian=False)
+    # Define constants
+    delta = 1e-2       # Radius of annular dead zone for second pupil
+    dt = 1e-3          # Integration step size
+    
+    # Set up an "integrator" to integrate the differential equation defined by 
+    # ds_annulus_gauss (thus obtaining s in terms of r)
+    s_integrator = integrate.ode(ds_annulus_gauss) \
+                   .set_integrator('vode', method='bdf', with_jacobian=False)
     
     # At the inner edge of the annulus (r = r0), the slope is -r0 + delta. 
     s_integrator.set_initial_value(-r0 + delta, r0).set_f_params( alpha,r0 )
@@ -127,14 +131,15 @@ def s_annulus_gauss(alpha,r0,frac_to_focus,delta=1e-2,dt=1e-3, n_med=1.5, thickn
     # Create an array of u's of the same size and spacing as the r values    
     us = np.linspace(0,1,1.0/dt + 1)
     
-    # The slope at the 2nd surface is "v", which is something that un-does the slope "s".
+    # Slope at the 2nd surface is v, which is something that un-does the slope s
     # Interpolate v from u (r + s) and -s values
     vs = np.interp(us,rs + ss,-ss,left=np.nan, right=0)
     
     ss_full = np.interp(us,rs,ss, left=np.nan, right=0)
     
     # Now fill in the remaining slopes in a smooth way 
-    # Replace 'nan' entries at the start of vs and ss_full with evenly spaced values extrapolated from the first non-'nan' value
+    # Replace 'nan' entries at the start of vs and ss_full with evenly spaced 
+    # values extrapolated from the first non-'nan' value
     wbad = np.where(vs != vs)[0]
     wgood = np.where(vs == vs)[0]
     vs[wbad] = vs[wgood[0]]*np.arange(wgood[0])/wgood[0]
@@ -143,16 +148,17 @@ def s_annulus_gauss(alpha,r0,frac_to_focus,delta=1e-2,dt=1e-3, n_med=1.5, thickn
     wgood = np.where(ss_full == ss_full)[0]
     ss_full[wbad] = ss_full[wgood[0]]*np.arange(wgood[0])/wgood[0]
     
-    #Also integrate the slopes. For surface 1, un-do the convergence that we would have had
-    #on the way to focus...
+    # Also integrate the slopes. For surface 1, un-do the convergence that we 
+    # would have had on the way to focus...
 
-    #Also convert to real heights. For the PIAA, the whole setup has to be scaled by the radius of the optic
-    #(imagine just rescaling a lens diagram). The effective optical thickness of the glass
-    #is thickness/n_med, and the aspect ratio is then radius_in_mm/(thickness/n_med)
+    # Also convert to real heights. For the PIAA, the whole setup has to be 
+    # scaled by the radius of the optic (imagine just rescaling a lens diagram). 
+    # The effective optical thickness of the glass is thickness/n_med, and the 
+    # aspect ratio is then radius_in_mm/(thickness/n_med)
     
-    #For the wavefront curvatures associated with "frac_to_focus" (i.e. undoing and
-    #re-doing the wavefront curvatures), the actual glass thickness is needed, rather than
-    #thickness/n_med
+    #For the wavefront curvatures associated with "frac_to_focus" (i.e. undoing 
+    # and re-doing the wavefront curvatures), the actual glass thickness is 
+    # needed, rather than thickness/n_med
 
     if (real_heights):
         s1 = integrate.cumtrapz(ss_full*n_med + frac_to_focus*us,us)
@@ -160,17 +166,18 @@ def s_annulus_gauss(alpha,r0,frac_to_focus,delta=1e-2,dt=1e-3, n_med=1.5, thickn
     else:
         s1 = integrate.cumtrapz(ss_full + frac_to_focus*us,us)
     
-    #Now we need to restore the converging beam. This just means adding a curvature that 
-    #gives us a focal length of (1-frac_to_focus)/frac_to_focus
+    #Now we need to restore the converging beam. This just means adding a 
+    # curvature that gives us a focal length of (1-frac_to_focus)/frac_to_focus
     if (real_heights):
-        s2 = integrate.cumtrapz(vs*n_med - frac_to_focus/(1-frac_to_focus)*us,us)
+        s2 = integrate.cumtrapz(vs*n_med-frac_to_focus/(1-frac_to_focus)*us,us)
         s2 *= radius_in_mm**2/thickness/(n_med-1.0)
     else:
         s2 = integrate.cumtrapz(vs - frac_to_focus/(1-frac_to_focus)*us,us)
 
-    return 0.5*(us[1:]+us[:-1]), s1, s2, us, ss_full, vs
+    return 0.5*(us[1:]+us[:-1]), s1, s2 #, us, ss_full, vs (not necessary)
     
-def create_piaa_lenses(alpha, r0, frac_to_focus, delta, dt, n_med, thickness, radius_in_mm, real_heights, dx, npix, wavelength_in_mm):
+def create_piaa_lenses(alpha, r0, frac_to_focus, n_med, thickness, radius_in_mm, 
+                       real_heights, dx, npix, wavelength_in_mm):
     """Constructs a pair of PIAA lenses given the relevant parameters.
     
     Parameters
@@ -183,14 +190,9 @@ def create_piaa_lenses(alpha, r0, frac_to_focus, delta, dt, n_med, thickness, ra
     frac_to_focus: float
         The fraction (2nd surface z coord - 1st surface z coord)/
                      (focus z coord       - 1st surface z coord)
-    delta: float
-        As the slope can not be infinite... delta describes
-        the radius of the annular dead zone in the second pupil. 
-    dt: float
-        Step size for integration.
     n_med: float
         Refractive index of the medium. This is used to compensate for the glass
-        (and give extra power to the new optic) as well as to estimate the height.
+        and give extra power to the new optic as well as to estimate the height.
     thickness: float
         Physical thickness/distance between the realised PIAA lenses
     radius_in_mm: float
@@ -209,25 +211,28 @@ def create_piaa_lenses(alpha, r0, frac_to_focus, delta, dt, n_med, thickness, ra
     piaa_lens1: np.array([[...]...])
         The phase aberrations introduced by the first PIAA lens.
     piaa_lens2: np.array([[...]...])
-        The phase aberrations introduced by the second PIAA lens, correcting those of the first lens.
+        The phase aberrations introduced by the second PIAA lens, correcting 
+        those of the first lens.
     """
     # Generate PIAA surfaces and slopes
-    r_surface, surface1, surface2, r_slope, slope_1, slope_2 = s_annulus_gauss(alpha, r0, frac_to_focus, delta, dt, n_med, thickness, radius_in_mm, real_heights)
+    r_surf, surf_1, surf_2 = s_annulus_gauss(alpha, r0, frac_to_focus, n_med, 
+                                          thickness, radius_in_mm, real_heights)
     
     x_in_pix = np.arange(npix, dtype=int)
     xy = np.meshgrid(x_in_pix, x_in_pix)
     r = np.sqrt((xy[0] - npix/2.0)**2 + (xy[1] - npix/2.0)**2)
     
     r_normalised = r * dx / (radius_in_mm) #R going from 0 to 1
-    # Fill in the lens heights. The negative sign in front of "surface1" and 
-    # "surface2" are needed to match the Fresnel diffraction sign convention.
+    # Fill in the lens heights. The negative sign in front of "surf_1" and 
+    # "surf_2" are needed to match the Fresnel diffraction sign convention.
     piaa_lens1 = np.zeros( (npix,npix) )
     piaa_lens2 = np.zeros( (npix,npix) )
-    piaa_lens1[xy] = np.interp(r_normalised, r_surface, -surface1)
-    piaa_lens2[xy] = np.interp(r_normalised, r_surface, -surface2)
+    piaa_lens1[xy] = np.interp(r_normalised, r_surf, -surf_1)
+    piaa_lens2[xy] = np.interp(r_normalised, r_surf, -surf_2)
     
     #Convert these to radians of phase. 
-    # As the surface of a lens was returned, we have to multiply by (n-1) to get the wavefront.
+    # As the surface of a lens was returned, we have to multiply by (n-1) to get 
+    # the wavefront.
     piaa_lens1 *= 2 * np.pi / wavelength_in_mm * (n_med - 1.0)
     piaa_lens2 *= 2 * np.pi / wavelength_in_mm * (n_med - 1.0)
     
