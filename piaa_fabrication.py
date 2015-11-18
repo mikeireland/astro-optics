@@ -18,6 +18,8 @@ def generate_light_forge_file(grid_size=4):
     
     Returns
     -------
+    surf_output: numpy array
+        Light Forge format output of tessellated lenses
     piaa_lens1: numpy.array
         The physical representation of the first PIAA lens, units in mm.
     piaa_lens2: numpy.array
@@ -48,10 +50,14 @@ def generate_light_forge_file(grid_size=4):
     piaa_lens1, piaa_lens2 = piaa.create_piaa_lenses(alpha, r0, frac_to_focus, 
                                  n_med, thickness, piaa_radius_in_mm, 
                                  real_heights, dx, npix, wavelength_in_mm)
-    
+
     # Get the physical lenses back from the wavefront distortions
-    piaa_lens1 /= (2 * np.pi / wavelength_in_mm * (n_med - 1.0))
-    piaa_lens2 /= (2 * np.pi / wavelength_in_mm * (n_med - 1.0))
+    piaa_lens1 /= (2.0 * np.pi / wavelength_in_mm * (n_med - 1.0))
+    piaa_lens2 /= (2.0 * np.pi / wavelength_in_mm * (n_med - 1.0))
+    
+    # Flip the lenses so that z=0 is the flat surface
+    piaa_lens1 = np.abs(piaa_lens1 - np.max(piaa_lens1))
+    piaa_lens2 = np.abs(piaa_lens2 - np.max(piaa_lens2))
     
     # Insert each lens into a larger array of zeroes of size 15/0.01/grid_size
     p1 = np.zeros( [cell_width, cell_width] )
@@ -73,8 +79,11 @@ def generate_light_forge_file(grid_size=4):
     # Construct the output array, where the first row/col are x/y respectively
     surf_output[0,1:] = xy_vals
     surf_output[1:,0] = xy_vals
+    
+    # Tessellate lens #1 and #2 over the grid
     for x in xrange(0, grid_size):
         for y in xrange(0, grid_size):
+            # Set up min and max x/y
             x1 = 1 + x*cell_width
             x2 = x1 + cell_width
             y1 = 1 + y*cell_width
@@ -86,5 +95,5 @@ def generate_light_forge_file(grid_size=4):
     np.savetxt(filename, surf_output, fmt='%10.3f', delimiter="\t")     
     
     # Return the physical lenses (eg - for the purpose of visualisation)
-    return piaa_lens1, piaa_lens2
+    return surf_output, piaa_lens1, piaa_lens2
     
