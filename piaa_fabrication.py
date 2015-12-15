@@ -6,6 +6,8 @@ import numpy as np
 import piaa
 import os
 from itertools import cycle
+import pylab as pl
+import ft_filter
 
 def generate_light_forge_file(grid_size=4):
     """Saves files in Light Forge file format (GridXYZ), surface height (z) on
@@ -68,12 +70,12 @@ def generate_light_forge_file(grid_size=4):
     r = np.sqrt((xy[0] - npix/2.0)**2 + (xy[1] - npix/2.0)**2)
     r_normalised = r * dx / (piaa_radius_in_mm) #R going from 0 to 1
     
-    # Save on line lengths - Length Slope 1 or 2
+    # Save line lengths - Radius of surface 1 and 2, not including ramps. 
     LS1 = len(surf_1)
     LS2 = len(surf_2)
     
-    # Construct new array with a flat and ramp component, using the available
-    # space on either side of the lens
+    # Construct new array with spline component, using the available space on 
+    # either side of the lens
     s1_ramped = np.zeros(LS1 + space_per_side)
     s2_ramped = np.zeros(LS2 + space_per_side)
     
@@ -81,25 +83,28 @@ def generate_light_forge_file(grid_size=4):
     s1_ramped[0:LS1] = surf_1
     s2_ramped[0:LS2] = surf_2
     
-    # Add the flat part (using to secure the lens)
-    s1_ramped[LS1:(LS1 + space_per_side/2)] = surf_1[-1]
-    s2_ramped[LS2:(LS2 + space_per_side/2)] = surf_2[-1]
-    
-    # Add the ramp part (used to avoid discontinuities for manufacturing)
-    ramp1 = np.interp(np.arange(0,space_per_side/2), [0,space_per_side/2], 
-                      [surf_1[-1], np.min(surf_1)])
-    s1_ramped[(LS1 + space_per_side/2):] = ramp1    
-    
-    ramp2 = np.interp(np.arange(0,space_per_side/2), [0,space_per_side/2], 
-                      [surf_2[-1], np.min(surf_2)])
-    s2_ramped[(LS1 + space_per_side/2):] = ramp2
-    
+    # Add spline. The x values are normalised with 1=grid spacing.
+    # The derivative is normalised in the same way.
+    # As per PIAA/Fresnel convention, surface #1 is < 0 (that is to say shifted
+    # below 0, not merely negative 
+    # (TODO: shift the curve > 0 earlier in the code, rather accounting for it
+    # multiple times and decreasing readability)
+    x_values = np.arange(0,space_per_side+1)
+    surf_1_pos = [(i + np.abs(np.min(surf_1))) for i in surf_1]
+    dy_dx_1 = surf_1_pos[-2] - surf_1_pos[-1]
+    s1_spline = single_spline_interpolation(x_values, surf_1_pos[-1], dy_dx_1)
+    s1_ramped[LS1-1:] = [(i - np.max(surf_1_pos)) for i in s1_spline] 
+
+    x_values = np.arange(0,space_per_side+1)    
+    dy_dx_2 = surf_2[-2] - surf_2[-1]
+    s2_spline = single_spline_interpolation(x_values, surf_2[-1], dy_dx_2)
+    s2_ramped[LS2-1:] = s2_spline
     
     # Fill in the lens heights. The negative sign in front of "surf_1" and 
     # "surf_2" are needed to match the Fresnel diffraction sign convention.
     piaa_lens1 = np.zeros( (npix,npix) )
     piaa_lens2 = np.zeros( (npix,npix) )
-    print len(r_normalised), (LS1 + 1.0*space_per_side)/LS1
+    
     piaa_lens1[xy] = np.interp(r_normalised, np.arange(0.0005, 
                              (LS1 + 1.0*space_per_side)/LS1, 0.001), -s1_ramped)
     piaa_lens2[xy] = np.interp(r_normalised, np.arange(0.0005, 
@@ -167,5 +172,68 @@ def generate_light_forge_file(grid_size=4):
     np.savetxt(filename, surf_output, fmt='%10.3f', delimiter="\t")     
     
     # Return the physical lenses (eg - for the purpose of visualisation)
-    return surf_output, piaa_lens1, piaa_lens2
+    return surf_output, piaa_lens1, piaa_lens2, 
+ 
+def single_spline_interpolation(x_values_in, A, B):
+    """
+    Performs a single 3rd order polynomial spline interpolation from the edge of
+    the constructed lens to a height of 0.0.
     
+    Parameters
+    ----------
+    x_values: float array 
+        Values for the x axis including end points. Must be in ascending order.
+    A: float
+        Height at the edge of the lens where the spline is to start
+    B: float
+        Derivative at the edge of the lens where the spline is to start  
+
+    Returns
+    -------
+    y_values: float array
+        Array of heights of the original lens + spline segment. Reversed such 
+        that zero is on the right.
+    """
+    # Initialise output
+    y_values = []
+    
+    #Scale the x-axis.
+    x_values = x_values_in.astype(float)
+    x_offset = x_values[0]
+    x_length = x_values[-1] - x_values[0]
+    x_scaled = (x_values - x_offset)/x_length
+    B_scaled = B*x_length
+    
+    # Solve simultaneous equations for a and b terms (c = d = 0)
+    # Use the terms to solve the 3rd order polynomial for each x values
+    for x in x_scaled:
+        ans     = np.array([A, B_scaled])
+        coeff   = np.array([[1, 1],
+                            [3, 2]])            
+        
+        ab = np.linalg.solve(coeff, ans)
+        
+        y = ab[0]*x**3 + ab[1]*x**2
+        y_values.append(y)
+        
+    # Return the result, but reverse so that the lens is on the left of the 
+    # spline segment
+    return y_values[::-1]
+    
+def ft_filter_and_save(surface, grid_size=4):
+    """
+    """
+    # Fourier Filter (Don't filter the axes required as part of the Light Forge
+    # requirements)
+    ft_filtered_surf = np.zeros( [len(surface), len(surface)])
+    ft_filtered_surf[0,:] = surface[0,:]
+    ft_filtered_surf[:,0] = surface[:,0]
+    ft_filtered_surf[1:,1:] = ft_filter.ft_filter(surface[1:,1:])
+
+    # Save
+    dir = os.path.dirname(__file__)
+    filename = dir + ("\\piaa_grid_" + str(grid_size) + "_ft_filtered" + ".dat")
+    np.savetxt(filename, ft_filtered_surf, fmt='%10.3f', delimiter="\t")  
+
+    # Return the filtered surface
+    return ft_filtered_surf

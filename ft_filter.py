@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import os
 import pylab as pl
 
-def ft_filter(grid_size=4,alpha=0.2):
+def ft_filter(surface,alpha=0.2):
     """
     Parameters
     ----------
@@ -13,12 +13,12 @@ def ft_filter(grid_size=4,alpha=0.2):
         1/alpha times bigger.
     """
     # Read in the lightforge doc
-    dir = os.path.dirname(__file__)
-    filename = dir + "\\piaa_grid_" + str(grid_size) + ".dat"
+    #dir = os.path.dirname(__file__)
+    #filename = dir + "\\piaa_grid_" + str(grid_size) + ".dat"
     
-    dd = np.loadtxt(filename) 
+    dd = surface 
     dx = 0.01
-    dd = dd[1:,1:]
+    #dd = dd[1:,1:]
     nx = len(dd)
 
     #One cycle per 0.1m is equivalent to how many cycles per FOV?
@@ -34,7 +34,13 @@ def ft_filter(grid_size=4,alpha=0.2):
     amp_reduction = np.fft.fftshift( np.maximum(amp_reduction,alpha) ) #Dodgy non divide by zero
     dd_filtered = np.real(np.fft.ifft2(np.fft.fft2(dd)/amp_reduction))
     
-    pl.imshow(dd_filtered)
+    #pl.imshow(dd_filtered)
+    
+    # Force negative numbers to be 0.0
+    for x in xrange(0, len(dd_filtered)):
+        for y in xrange(0, len(dd_filtered)):
+            if dd_filtered[x,y] < 0.0:
+                dd_filtered[x,y] = 0.0
     
     return dd_filtered
 
