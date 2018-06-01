@@ -6,7 +6,7 @@ Each optical element has a focal length and width and implements the method
 Authors:
 Adam Rains
 """
-
+from __future__ import division, print_function
 import numpy as np
 import opticstools as optics_tools
 import opticstools.utils as utils
@@ -120,8 +120,8 @@ class MicrolensArray_3x3(OpticalElement):
         square = utils.square(npix, self.width/dx) + 0j
         
         # Starting in the top left, track the window over each row
-        for x in xrange(-1,2):
-            for y in xrange(-1,2):
+        for x in range(-1,2):
+            for y in range(-1,2):
                 # Calculate the base shift (the actual shift requires the -1, 
                 # 0 or 1 multiplier to get direction) 
                 shift = int(self.width/dx)
@@ -207,8 +207,8 @@ class MicrolensArray_3x3(OpticalElement):
         eta_1_5_9 = [0,0,0]
         
         # For each of the 9 microlenses 
-        for x in xrange(-1,2):
-            for y in xrange(-1,2):
+        for x in range(-1,2):
+            for y in range(-1,2):
                 # Shift the desired square to the centre
                 y_shifted_ef = np.roll(input_ef, -shift*y, axis=1)
                 xy_shifted_ef = np.roll(y_shifted_ef, -shift*x, axis=0)
@@ -218,7 +218,7 @@ class MicrolensArray_3x3(OpticalElement):
                 #--------------------------------------------------------------
                 #if type(real_offsets) != None and type(offset_ifu) != None:
                 if test:
-                    print "Computing coupling with real fibre offsets"
+                    #print "Computing coupling with real fibre offsets"
                     
 
                     
@@ -236,8 +236,8 @@ class MicrolensArray_3x3(OpticalElement):
                 #--------------------------------------------------------------
                 
                 # Apply the window and curved wavefront
-                sub_ef = xy_shifted_ef[(npix/2 - shift/2):(npix/2 + shift/2),
-                                       (npix/2 - shift/2):(npix/2 + shift/2)]
+                sub_ef = xy_shifted_ef[(npix//2 - shift//2):(npix//2 + shift//2),
+                                       (npix//2 - shift//2):(npix//2 + shift//2)]
                 curved_ef = curved_square * sub_ef
                 
                 # Propagate the light passing through the microlens to the fibre

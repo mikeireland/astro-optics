@@ -3,6 +3,7 @@
 Authors:
 Adam Rains
 """
+from __future__ import division, print_function
 import numpy as np
 import optics
 import opticstools as optics_tools
@@ -18,7 +19,7 @@ class Feed:
     TODO: Make Feed the base class and RHEA Feed a specific instance of it
     """
     def __init__(self, stromlo_variables=True, use_piaa=True, 
-                 use_microlens_array=True):
+                 use_microlens_array=True, old_subaru=False):
         """Constructs the class with the following list of default parameters.
         """        
         self.alpha = 2.0            # Gaussian exponent term
@@ -46,10 +47,12 @@ class Feed:
             self.fibre_core_radius = 0.00125     # Width of fibre in mm 
             self.focal_length_1 = 94    # Focal length of wf before PIAA lens #1
         else:
-            self.wavelength_in_mm = 0.7/1000.0  # Wavelength of light in mm 
+            self.wavelength_in_mm = 0.633/1000.0  # Wavelength of light in mm 
             self.fibre_core_radius = 0.00175    # Width of fibre in mm 
             self.focal_length_1 = 2/7.2*300     # 7.2 mm pupil via 300 mm lens
             self.focal_length_2 = 1.45          # Re-focusing lens 2
+            self.piaa_r_in_mm = 1.0    # Physical radius
+            self.r0 = 0.31              # Fractional size of secondary mirror (Jovanovic17)
         
         self.frac_to_focus = self.thickness / self.focal_length_1
         
@@ -170,7 +173,7 @@ class Feed:
         else:
             distance_to_lens = self.focal_length_1 + self.focal_length_2 + dz
         
-        print "Distance to lens #2: %0.2f mm" % distance_to_lens
+        print("Distance to lens #2: %0.2f mm" % distance_to_lens)
         
         # Propagate to lens #2
         ef.append(optics_tools.propagate_by_fresnel(ef[-1], self.dx, 
@@ -186,7 +189,7 @@ class Feed:
                                        1/(self.focal_length_2 + dz) )) 
                                        #From thin lens formula
                                            
-        print "Distance to MLA: %0.2f mm" % distance_to_microlens_array    
+        print("Distance to MLA: %0.2f mm" % distance_to_microlens_array)
         
         ef.append(optics_tools.propagate_by_fresnel(ef[-1], self.dx, 
                                                     distance_to_microlens_array, 
@@ -227,7 +230,7 @@ class Feed:
                                                     self.mode)
         ef.append(ef_at_fibre)
         
-        print "Distance to fibre: %0.2f mm" % distance_to_fibre
+        print("Distance to fibre: %0.2f mm" % distance_to_fibre)
         
         # All finished, return
         return coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9, ef, turbulence
@@ -243,12 +246,12 @@ def test(dz=0.152, offset=84, seeing=0.0, alpha=2.0, use_piaa=True,
                                                     seeing=seeing, alpha=alpha, 
                                                     use_tip_tilt=use_tip_tilt)
     tm.append( (time.time(), "End") )
-    print "Total time: ", tm[-1][0] - tm[0][0] 
+    print("Total time: ", tm[-1][0] - tm[0][0])
     return c, a, eta, ef, t
     
     
     
-def propagate_subaru():
+def propagate_subaru(old_subaru=False):
     """May 2018 Method to accurately compute Subaru cable throughput compared
     to the throughput observed in the lab and at the summit."""
     # Initialise Turbulence  (seeing=0, so not actually applied)
@@ -256,12 +259,14 @@ def propagate_subaru():
     
     # Initialise Feed
     subaru_feed = Feed(use_piaa=False, stromlo_variables=False)
-    subaru_feed.npix = 2048 #4096
-    subaru_feed.dx = 2.0/1000.0         # Pixel scale in mm/px
+    subaru_feed.npix = 4096
+    subaru_feed.dx = 1.4/1000.0         # Pixel scale in mm/px
     offset = int(0.15 / subaru_feed.dx) # From 1.15 mm pitch mask
     
     # Calculate dz using known fabricated distance to MLA
     d_mla = 36.39
+    if old_subaru:
+        d_mla = 56.91
     f_2 = subaru_feed.focal_length_2
     dz = d_mla*f_2 / (d_mla - f_2) - f_2
     
@@ -274,19 +279,19 @@ def propagate_subaru():
     input_field = np.sum(np.abs(ef[0]**2))
     al_train = [np.sum(np.abs(ef_i**2))/input_field for ef_i in ef]
     
-    print "\n-----------------\nAperture Losses\n-----------------"
-    print "%-22s: %-2.3f" % ("Pupil plane", al_train[0])
-    print "%-22s: %-2.3f" % ("Pupil (Turbulent)", al_train[1])
-    print "%-22s: %-2.3f" % ("Apply Lens #1", al_train[2])
-    print "%-22s: %-2.3f" % ("Surface Lens #2", al_train[3])
-    print "%-22s: %-2.3f" % ("Apply Lens #2", al_train[4])
-    print "%-22s: %-2.3f" % ("MLA Surface", al_train[5])
-    print "%-22s: %-2.3f" % ("Fibre Surface", al_train[6])
+    print("\n-----------------\nAperture Losses\n-----------------")
+    print("%-22s: %-2.3f" % ("Pupil plane", al_train[0]))
+    print("%-22s: %-2.3f" % ("Pupil (Turbulent)", al_train[1]))
+    print("%-22s: %-2.3f" % ("Apply Lens #1", al_train[2]))
+    print("%-22s: %-2.3f" % ("Surface Lens #2", al_train[3]))
+    print("%-22s: %-2.3f" % ("Apply Lens #2", al_train[4]))
+    print("%-22s: %-2.3f" % ("MLA Surface", al_train[5]))
+    print("%-22s: %-2.3f" % ("Fibre Surface", al_train[6]))
     
-    print "\n-----------------\nThroughput\n-----------------"
-    print "%-10s: %-2.3f" % ("1 fibre", eta[0])
-    print "%-10s: %-2.3f" % ("5 fibres", eta[1])
-    print "%-10s: %-2.3f" % ("9 fibres", eta[2])
+    print("\n-----------------\nThroughput\n-----------------")
+    print("%-10s: %-2.3f" % ("1 fibre", eta[0]))
+    print("%-10s: %-2.3f" % ("5 fibres", eta[1]))
+    print("%-10s: %-2.3f" % ("9 fibres", eta[2]))
     
     # Now we want to compute the predicted throughput using the *known* fibre
     # positional offsets - i.e. compute the overlap integrals for each fibre,
@@ -333,9 +338,9 @@ def propagate_subaru():
                                             real_offsets=offset_dict, 
                                             offset_ifu=subaru_ifu, test=True)
     
-    print "\n-----------------\nReal Throughput\n-----------------"
-    print "%-10s: %-2.3f" % ("1 fibre", eta_real[0])
-    print "%-10s: %-2.3f" % ("5 fibres", eta_real[1])
-    print "%-10s: %-2.3f" % ("9 fibres", eta_real[2])
+    print("\n-----------------\nReal Throughput\n-----------------") 
+    print("%-10s: %-2.3f" % ("1 fibre", eta_real[0]))
+    print("%-10s: %-2.3f" % ("5 fibres", eta_real[1]))
+    print("%-10s: %-2.3f" % ("9 fibres", eta_real[2]))
     
     return c, a, eta, ef, t
