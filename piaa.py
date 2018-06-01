@@ -16,7 +16,7 @@ import pdb
 from scipy import integrate
 from scipy import interpolate
 import matplotlib.pyplot as plt
-import utils
+import opticstools.utils as utils
 import math
 import csv
 import pylab as pl

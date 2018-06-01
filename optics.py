@@ -140,7 +140,8 @@ class MicrolensArray_3x3(OpticalElement):
     
     def apply_propagate_and_couple(self, input_ef, npix, dx, wavelength_in_mm, 
                                    distance_to_fibre, input_field, offset, 
-                                   fibre_mode):
+                                   fibre_mode, real_offsets=None,
+                                   offset_ifu=None, test=False):
         """Applies 3x3 curved wavefronts and square masks to the incident wave.
 
         Parameters
@@ -184,6 +185,8 @@ class MicrolensArray_3x3(OpticalElement):
             wave at the fibre plane with the fibre mode for a1 (the central 
             fibre), a5 (the central row and column) and a9 (entire 3x3 array). 
         """ 
+        npix = int(npix)
+        
         # Initialise the resultant electric field (that will be the addition of 
         # each of the 9 micro-lenslets)
         out_ef = np.zeros((npix, npix)) + 0j
@@ -209,7 +212,29 @@ class MicrolensArray_3x3(OpticalElement):
                 # Shift the desired square to the centre
                 y_shifted_ef = np.roll(input_ef, -shift*y, axis=1)
                 xy_shifted_ef = np.roll(y_shifted_ef, -shift*x, axis=0)
+                
+                #--------------------------------------------------------------
+                # Computing coupling with *real* offsets
+                #--------------------------------------------------------------
+                #if type(real_offsets) != None and type(offset_ifu) != None:
+                if test:
+                    print "Computing coupling with real fibre offsets"
+                    
 
+                    
+                    fibre_num = int(offset_ifu[x+1, y+1])
+                    fibre_x = int(np.round(real_offsets[fibre_num][0]))
+                    fibre_y = int(np.round(real_offsets[fibre_num][2]))
+                    
+                    # Positive shift in y (axis 0) is down
+                    # Positive shift in x (axis 1) is right
+                    xy_shifted_ef = np.roll(xy_shifted_ef, -fibre_x, axis=1)
+                    xy_shifted_ef = np.roll(xy_shifted_ef, -fibre_y, axis=0)
+                    
+                    #import pdb
+                    #pdb.set_trace()
+                #--------------------------------------------------------------
+                
                 # Apply the window and curved wavefront
                 sub_ef = xy_shifted_ef[(npix/2 - shift/2):(npix/2 + shift/2),
                                        (npix/2 - shift/2):(npix/2 + shift/2)]
@@ -249,7 +274,7 @@ class MicrolensArray_3x3(OpticalElement):
                     eta_1_5_9[1] += coupling * aperture_loss_fibre               
                 # 9 Fibres
                 eta_1_5_9[2] += coupling * aperture_loss_fibre
-      
+        
         return out_ef, coupling_1_to_9, aperture_loss_1_to_9, eta_1_5_9
 
 class PIAAOptics(OpticalElement): 
